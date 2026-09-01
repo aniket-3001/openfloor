@@ -1,0 +1,42 @@
+{
+  "name": "openfloor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A WebMCP-native live auction house where agents bid inside human-set mandates they cannot exceed.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/shared",
+    "packages/engine",
+    "packages/worker",
+    "packages/server",
+    "packages/floor",
+    "packages/bidder"
+  ],
+  "scripts": {
+    "build": "npm run build -w @openfloor/floor && npm run build -w @openfloor/bidder",
+    "dev:floor": "npm run dev -w @openfloor/floor",
+    "dev:bidder": "npm run dev -w @openfloor/bidder",
+    "dev:worker": "npm run dev -w @openfloor/worker",
+    "deploy": "npm run build && wrangler deploy",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "node scripts/integration.mjs",
+    "test:live": "node scripts/live.mjs",
+    "verify": "npm run typecheck && npm run test && npm run build",
+    "probe": "node scripts/browser-probe.mjs",
+    "probe:exec": "node scripts/probe-execute.mjs",
+    "probe:exposed": "node scripts/probe-exposedto.mjs",
+    "dev:server": "npm run dev -w @openfloor/server",
+    "test:concurrency": "node scripts/concurrency.mjs"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.3",
+    "esbuild": "^0.28.2",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9",
+    "wrangler": "^4.127.1"
+  }
+}
