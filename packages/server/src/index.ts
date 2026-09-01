@@ -37,6 +37,7 @@ import {
   openSession,
   passphraseVerifier,
   readCookie,
+  safeEqual,
   sealSession,
   sessionCookie,
   type Session,
@@ -302,8 +303,12 @@ const server = createServer((req, res) => {
 
     // Resolve the caller's session, minting one on first contact so there is no
     // signup wall — you open the page and you are already seated.
+    // Constant-time: `===` on a secret short-circuits at the first differing
+    // byte, which is a timing oracle. Cheap to avoid in a project whose whole
+    // argument is about trust boundaries.
+    const presented = req.headers[INTERNAL_HEADER];
     const internal =
-      !!INTERNAL_TOKEN && req.headers[INTERNAL_HEADER] === INTERNAL_TOKEN;
+      !!INTERNAL_TOKEN && typeof presented === "string" && safeEqual(presented, INTERNAL_TOKEN);
 
     let session = await openSession(readCookie(req.headers.cookie, SESSION_COOKIE), MANDATE_SECRET);
     let setCookie: string | null = null;
