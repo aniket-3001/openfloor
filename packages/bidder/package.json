@@ -1,0 +1,23 @@
+{
+  "name": "@openfloor/bidder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5174 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --port 5174"
+  },
+  "dependencies": {
+    "@openfloor/shared": "*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "use-webmcp-tool": "^0.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "vite": "^5.4.10"
+  }
+}
