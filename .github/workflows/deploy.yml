@@ -1,0 +1,132 @@
+name: Deploy
+
+# Every push to main is verified and then deployed to Cloud Run.
+#
+# Deploy is gated on the full test suite. A push that breaks enforcement, the
+# serialization guarantee, or the tool schemas must never reach the live
+# auction — so `verify` is a hard dependency of every deploy job.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: openfloor-webmcp-2026
+  REGION: us-central1
+  PROJECT_NUMBER: "101078802199"
+
+jobs:
+  verify:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      # The auction engine runs headless here, so the HTTP suites can run in CI
+      # without a browser. They cover serialization, persistence, the clock and
+      # the redaction boundary — the parts unit tests cannot reach.
+      - name: Start server for end-to-end suites
+        run: |
+          npm run build -w @openfloor/server
+          MANDATE_SECRET=ci-secret PORT=8080 node packages/server/dist/server.js &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8080/healthz >/dev/null && break
+            sleep 1
+          done
+
+      - name: Integration suite
+        run: OPENFLOOR_API=http://127.0.0.1:8080/api OPENFLOOR_PACE=10 npm run test:integration
+
+      - name: Concurrency suite
+        run: OPENFLOOR_API=http://127.0.0.1:8080/api npm run test:concurrency
+
+  deploy:
+    name: Deploy to Cloud Run
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Serialize deploys: three services share one image and reference each
+    # other's origins, so overlapping runs could leave them mismatched.
+    concurrency:
+      group: cloud-run-deploy
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Resolve service origins
+        run: |
+          # Cloud Run URLs are derivable from the project number, so all three
+          # origins are known before any deploy. Without that there would be a
+          # cycle: the floor needs the bidder's origin for `exposedTo`, and the
+          # bidder needs the floor's to bridge into its frame tree.
+          echo "API=https://openfloor-api-${PROJECT_NUMBER}.${REGION}.run.app"       >> $GITHUB_ENV
+          echo "FLOOR=https://openfloor-floor-${PROJECT_NUMBER}.${REGION}.run.app"   >> $GITHUB_ENV
+          echo "BIDDER=https://openfloor-bidder-${PROJECT_NUMBER}.${REGION}.run.app" >> $GITHUB_ENV
+
+      - name: Deploy API
+        run: |
+          gcloud run deploy openfloor-api \
+            --source . --region "$REGION" --allow-unauthenticated --quiet \
+            --max-instances=1 --min-instances=1 --concurrency=80 --timeout=3600 --memory=512Mi \
+            --set-env-vars="^@^OPENFLOOR_ROLE=api@MANDATE_SECRET=${{ secrets.MANDATE_SECRET }}@ALLOWED_ORIGINS=$FLOOR,$BIDDER@OPENFLOOR_RIVALS=ada,rex,nia@OPENFLOOR_RIVAL_TICK_MS=2500@PUBLIC_ROOM=main"
+
+      - name: Deploy floor
+        run: |
+          gcloud run deploy openfloor-floor \
+            --source . --region "$REGION" --allow-unauthenticated --quiet \
+            --max-instances=2 --memory=512Mi \
+            --set-env-vars="^@^OPENFLOOR_ROLE=floor@STATIC_DIR=static/floor@PUBLIC_API_BASE=$API@PUBLIC_BIDDER_ORIGINS=$BIDDER@PUBLIC_ROOM=main"
+
+      - name: Deploy bidder console
+        run: |
+          gcloud run deploy openfloor-bidder \
+            --source . --region "$REGION" --allow-unauthenticated --quiet \
+            --max-instances=2 --memory=512Mi \
+            --set-env-vars="^@^OPENFLOOR_ROLE=bidder@STATIC_DIR=static/bidder@PUBLIC_API_BASE=$API@PUBLIC_FLOOR_ORIGIN=$FLOOR@PUBLIC_ROOM=main@PUBLIC_PERSONA=you"
+
+      - name: Smoke-test the deployment
+        run: |
+          set -e
+          # A green deploy that serves a broken page is worse than a red one,
+          # so assert the live surfaces actually respond before calling it done.
+          test "$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$FLOOR/")"  = "200"
+          test "$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$BIDDER/")" = "200"
+          curl -sf --max-time 30 "$API/api/state?room=main" | grep -q '"lot"'
+          # Runtime config must carry the real origins; empty values here are how
+          # the first manual deploy silently pointed the floor at itself.
+          curl -sf --max-time 30 "$FLOOR/config.js"  | grep -q "openfloor-api"
+          curl -sf --max-time 30 "$BIDDER/config.js" | grep -q "openfloor-floor"
+          echo "Live: $FLOOR"
+
+      - name: Open a lot so visitors arrive to a running auction
+        run: curl -sf -X POST --max-time 30 "$API/api/start?room=main" -H 'Content-Type: application/json' -d '{}' >/dev/null || true
