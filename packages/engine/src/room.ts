@@ -621,11 +621,16 @@ export class AuctionEngine {
 
   /* ─────────────────────────── HTTP surface ─────────────────────────── */
 
-  async handle(request: Request): Promise<Response> {
-    return this.serialize(() => this.dispatch(request));
+  /**
+   * @param authBidderId Identity proven by the caller's session. When present
+   * it OVERRIDES any bidder_id in the body — a client may say who it is, but
+   * it does not get to decide.
+   */
+  async handle(request: Request, authBidderId?: string): Promise<Response> {
+    return this.serialize(() => this.dispatch(request, authBidderId));
   }
 
-  private async dispatch(request: Request): Promise<Response> {
+  private async dispatch(request: Request, authBidderId?: string): Promise<Response> {
     await this.load();
     const url = new URL(request.url);
     const path = url.pathname.replace(/^\/api/, "");
@@ -643,7 +648,13 @@ export class AuctionEngine {
     if (request.method !== "GET" && request.method !== "HEAD") {
       raw = await request.text();
     }
-    const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+
+    // Identity is taken from the session, never from the payload. Before this,
+    // a client could bid as anyone, approve anyone's confirmation, and issue a
+    // mandate setting anyone's ceiling — the audit trail said "human approved"
+    // while the server had no idea which human, if any.
+    const body = authBidderId ? { ...parsed, bidder_id: authBidderId } : parsed;
 
     // Resolve anything the human left hanging before serving this request.
     this.sweepExpiredConfirmations();
@@ -746,7 +757,12 @@ export class AuctionEngine {
         }
 
         case "GET /mandate": {
-          const bidderId = url.searchParams.get("bidder_id") ?? "";
+          // A mandate is a ceiling. Never serve someone else's.
+          const bidderId = authBidderId ?? url.searchParams.get("bidder_id") ?? "";
+          if (authBidderId && url.searchParams.get("bidder_id") &&
+              url.searchParams.get("bidder_id") !== authBidderId) {
+            return this.json({ error: "That mandate is not yours" }, 403);
+          }
           const m = this.mandates.get(bidderId);
           if (!m) return this.json({ mandate: null });
           return this.json({
@@ -814,6 +830,12 @@ export class AuctionEngine {
           const payload = body as unknown as { confirmation_id: string; approved: boolean };
           const c = this.confirmations.get(payload.confirmation_id);
           if (!c) return this.json({ error: "Unknown or expired confirmation" }, 404);
+          // Only the bidder a card belongs to may resolve it. Holding the id is
+          // not authority — this is the single most important human control in
+          // the system, and it was previously open to anyone who knew the id.
+          if (authBidderId && c.bidder_id !== authBidderId) {
+            return this.json({ error: "That confirmation is not yours" }, 403);
+          }
           if (!payload.approved) {
             this.confirmations.delete(payload.confirmation_id);
             this.log({
@@ -874,6 +896,9 @@ export class AuctionEngine {
           const payload = body as unknown as { request_id: string; approved: boolean };
           const req = this.ceilingRequests.get(payload.request_id);
           if (!req) return this.json({ error: "Unknown request" }, 404);
+          if (authBidderId && req.bidder_id !== authBidderId) {
+            return this.json({ error: "That request is not yours" }, 403);
+          }
           req.status = payload.approved ? "approved" : "declined";
           if (payload.approved) {
             const m = this.mandates.get(req.bidder_id);
