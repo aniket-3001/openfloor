@@ -109,7 +109,22 @@ jobs:
                  --repository-format=docker --location=$REGION"
             exit 1
           fi
-          gcloud builds submit --tag "$IMAGE" --machine-type=e2-highcpu-8 --timeout=1200s --quiet
+          # --suppress-logs is required, not cosmetic: gcloud tries to STREAM
+          # build logs, which needs Viewer/Owner on the project. A deploy
+          # service account does not have that, so the stream fails and gcloud
+          # exits non-zero even when the build itself succeeds. Suppressing the
+          # stream still waits for completion and still returns the real result.
+          set +e
+          gcloud builds submit --tag "$IMAGE" \
+            --machine-type=e2-highcpu-8 --timeout=1200s --suppress-logs --quiet
+          BUILD_RC=$?
+          set -e
+          if [ $BUILD_RC -ne 0 ]; then
+            echo "Build failed. Fetching logs:"
+            BID=$(gcloud builds list --region="$REGION" --limit=1 --format="value(id)")
+            gcloud builds log "$BID" --region="$REGION" 2>&1 | tail -60 || true
+            exit $BUILD_RC
+          fi
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
       - name: Deploy API
