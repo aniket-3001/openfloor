@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AuctionState,
   AuditEntry,
@@ -21,11 +21,21 @@ export function useAuction(bidderId: string) {
   const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
   const [raiseRequests, setRaiseRequests] = useState<CeilingRaiseRequest[]>([]);
   const [connected, setConnected] = useState(false);
+  /**
+   * When the current snapshot arrived.
+   *
+   * `seconds_remaining` is a value the server computed at send time. Ticking a
+   * re-render does not decrement it, so the clock sat frozen between events and
+   * only jumped when a bid or the poll landed — which read as "needs a refresh".
+   * The countdown is derived from this stamp instead.
+   */
+  const stamped = useRef<number>(0);
 
   const refresh = useCallback(async () => {
     try {
       const [{ state: s }, { entries }] = await Promise.all([api.state(), api.audit()]);
       setState(s);
+      stamped.current = Date.now();
       setAudit(entries);
     } catch {
       /* transient */
@@ -61,6 +71,7 @@ export function useAuction(bidderId: string) {
           case "state":
           case "bid":
             setState(msg.state);
+            stamped.current = Date.now();
             break;
           case "audit":
             setAudit((prev) => [...prev.slice(-80), msg.entry]);
@@ -95,12 +106,23 @@ export function useAuction(bidderId: string) {
     };
   }, [refresh, bidderId]);
 
-  // Smooth the countdown between server frames. Only ever counts down.
+  // Re-render often enough for a smooth countdown.
   const [, setTick] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    const t = setInterval(() => setTick((n) => n + 1), 250);
     return () => clearInterval(t);
   }, []);
 
-  return { state, audit, confirmations, raiseRequests, connected, refresh, setConfirmations, setRaiseRequests };
+  /**
+   * Seconds left, counted locally from the last snapshot.
+   *
+   * Only ever counts DOWN from a server-provided figure — a fresh snapshot
+   * resets it, so an anti-snipe extension still lands correctly and the client
+   * can never invent time the server has not granted.
+   */
+  const secondsLeft = state
+    ? Math.max(0, Math.round(state.seconds_remaining - (Date.now() - stamped.current) / 1000))
+    : 0;
+
+  return { state, secondsLeft, audit, confirmations, raiseRequests, connected, refresh, setConfirmations, setRaiseRequests };
 }

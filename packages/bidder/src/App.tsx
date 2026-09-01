@@ -45,7 +45,7 @@ function useBidderId(personaId: string): string {
 export function App() {
   const persona = getPersona(PERSONA_ID);
   const bidderId = useBidderId(persona.id);
-  const { state, confirmations, raiseRequests, connected, refresh, setRaiseRequests } =
+  const { state, secondsLeft, confirmations, raiseRequests, connected, refresh, setRaiseRequests } =
     useAuction(bidderId);
 
   const [lot, setLot] = useState<PublicLot | null>(null);
@@ -154,7 +154,7 @@ export function App() {
   // as "You's reasoning". Rivals keep their own names.
   const possessive = persona.alias === "You" ? "Your agent's" : `${persona.alias}'s`;
 
-  const seconds = state?.seconds_remaining ?? 0;
+  const seconds = secondsLeft;
   const open = state?.lot?.status === "open" && seconds > 0;
   const leading = state?.high_bidder_id === bidderId;
 

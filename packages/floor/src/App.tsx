@@ -20,7 +20,7 @@ import { Activity } from "./components/Activity";
  * page can say "you are leading" and mean it.
  */
 export function App() {
-  const { state, audit, confirmations, raiseRequests, connected, refresh, setRaiseRequests } =
+  const { state, secondsLeft, audit, confirmations, raiseRequests, connected, refresh, setRaiseRequests } =
     useAuction();
   const [me, setMe] = useState<{ bidder_id: string; alias: string; handle: string | null } | null>(null);
   const [mandate, setMandate] = useState<BidMandate | null>(null);
@@ -92,7 +92,7 @@ export function App() {
     prevPrice.current = state.current_price_cents;
   }, [state?.current_price_cents]);
 
-  const seconds = state?.seconds_remaining ?? 0;
+  const seconds = secondsLeft;
   const open = state?.lot?.status === "open" && seconds > 0;
   const minNext = (state?.current_price_cents ?? 0) + (state?.min_increment_cents ?? 100);
   const leading = !!bidderId && state?.high_bidder_id === bidderId;
