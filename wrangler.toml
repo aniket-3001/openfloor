@@ -1,0 +1,33 @@
+name = "openfloor"
+main = "packages/worker/src/index.ts"
+compatibility_date = "2026-06-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The auction room. One Durable Object instance per room name; its
+# single-threaded execution is what makes bid serialization correct by
+# construction rather than by locking.
+[[durable_objects.bindings]]
+name = "AUCTION_ROOM"
+class_name = "AuctionRoom"
+
+# SQLite-backed Durable Objects work on the Workers FREE plan; the older
+# key-value backed classes (`new_classes`) require Workers Paid. Same API from
+# the code's point of view — `state.storage.get/put/setAlarm` are unchanged —
+# so this is purely a plan-compatibility choice.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AuctionRoom"]
+
+[vars]
+# Origins allowed to call the auction API cross-origin. This must stay in sync
+# with the `exposedTo` allowlist used for WebMCP tool registration — see
+# packages/floor/src/webmcp/registerAuctionTools.ts
+ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:5174,http://localhost:5175"
+
+# Secrets — set with `wrangler secret put <NAME>`, never committed:
+#   MANDATE_SECRET      HMAC key for signing bid mandates (required)
+#   ANTHROPIC_API_KEY   optional; without it rival agents use heuristic bidding
+
+[assets]
+directory = "packages/floor/dist"
+binding = "ASSETS"
