@@ -70,6 +70,14 @@ export class AuctionEngine {
   private aliases = new Map<string, string>();
   private confirmations = new Map<string, PendingConfirmation>();
   private ceilingRequests = new Map<string, CeilingRaiseRequest>();
+  /**
+   * Compact record of closed lots: who won and for how much.
+   *
+   * The bids array is bounded, so a long-running room would eventually forget
+   * an early win and silently free up session budget that had already been
+   * spent. This keeps settlement independent of retention.
+   */
+  private settled: { lot_id: string; bidder_id: string; amount_cents: number }[] = [];
   private withdrawn = new Set<string>();
   private rateLimit = new Map<string, number[]>();
 
@@ -122,6 +130,7 @@ export class AuctionEngine {
       this.mandates = new Map(stored.mandates as [string, BidMandate][]);
       this.aliases = new Map(stored.aliases as [string, string][]);
       this.withdrawn = new Set(stored.withdrawn as string[]);
+      this.settled = (stored.settled ?? []) as typeof this.settled;
       // These outlive a hibernation cycle too. A pending confirmation that
       // vanished because the DO slept would leave a human staring at an
       // approval card that no longer resolves to anything.
@@ -151,6 +160,7 @@ export class AuctionEngine {
       mandates: [...this.mandates.entries()],
       aliases: [...this.aliases.entries()],
       withdrawn: [...this.withdrawn],
+      settled: this.settled,
       confirmations: [...this.confirmations.entries()],
       ceilingRequests: [...this.ceilingRequests.entries()],
       clockExtended: this.clockExtended,
@@ -174,6 +184,7 @@ export class AuctionEngine {
     this.confirmations.clear();
     this.ceilingRequests.clear();
     this.withdrawn.clear();
+    this.settled = [];
   }
 
   /* ─────────────────────────── state helpers ─────────────────────────── */
@@ -224,20 +235,16 @@ export class AuctionEngine {
    * second. Both count.
    */
   private committedCents(bidderId: string): number {
+    // Settled lots come from the compact ledger rather than the bid array, so
+    // trimming old bids can never quietly refund a completed purchase.
     let total = 0;
-    for (const lot of this.lots) {
-      const lotBids = this.bids.filter((b) => b.lot_id === lot.id);
-      if (!lotBids.length) continue;
+    for (const w of this.settled) if (w.bidder_id === bidderId) total += w.amount_cents;
 
-      // Derive the leader from THIS lot's bids. `this.highBidderId` describes
-      // only the lot currently on the block, so using it here silently valued
-      // every previously-won lot at zero.
-      const top = lotBids.reduce((a, b) => (b.amount_cents > a.amount_cents ? b : a));
-      if (top.bidder_id !== bidderId) continue;
-
-      // Won lots are owed. A live lot you lead is exposure — the hammer could
-      // fall at any second. Passed lots cost nothing.
-      if (lot.status === "sold" || lot.status === "open") total += top.amount_cents;
+    // Plus the live lot, if this bidder is currently leading it: the hammer
+    // could fall at any moment, so that is real exposure.
+    const lot = this.currentLot;
+    if (lot && lot.status === "open" && this.highBidderId === bidderId) {
+      total += this.currentPriceCents;
     }
     return total;
   }
@@ -276,6 +283,7 @@ export class AuctionEngine {
       this.log({
         origin: "system",
         actor: this.aliases.get(c.bidder_id) ?? c.bidder_id,
+        actor_id: c.bidder_id,
         actor_kind: "system",
         action: "confirmation_expired",
         detail: `No answer on ${fmt(c.amount_cents)} within the window. Treated as declined.`,
@@ -332,6 +340,13 @@ export class AuctionEngine {
     if (!lot || lot.status !== "open") return false;
     const met = this.currentPriceCents >= lot.reserve_cents;
     lot.status = met ? "sold" : "passed";
+    if (met && this.highBidderId) {
+      this.settled.push({
+        lot_id: lot.id,
+        bidder_id: this.highBidderId,
+        amount_cents: this.currentPriceCents,
+      });
+    }
     return met;
   }
 
@@ -406,6 +421,7 @@ export class AuctionEngine {
       this.log({
         origin: body.origin,
         actor: this.aliases.get(body.bidder_id) ?? body.bidder_id,
+        actor_id: body.bidder_id,
         actor_kind: body.placed_by,
         action: "bid_rate_limited",
         detail: "Too many bid attempts in a short window.",
@@ -491,6 +507,7 @@ export class AuctionEngine {
       this.log({
         origin: body.origin,
         actor: this.aliases.get(body.bidder_id) ?? body.bidder_id,
+        actor_id: body.bidder_id,
         actor_kind: "agent",
         action: "confirmation_requested",
         detail: `Agent wants ${fmt(body.amount_cents)} — above notify threshold. Awaiting human.`,
@@ -504,6 +521,7 @@ export class AuctionEngine {
       this.log({
         origin: body.origin,
         actor: this.aliases.get(body.bidder_id) ?? body.bidder_id,
+        actor_id: body.bidder_id,
         actor_kind: "agent",
         action: `bid_${outcome.status}`,
         detail: outcome.message,
@@ -574,6 +592,9 @@ export class AuctionEngine {
     };
 
     this.bids.push(bid);
+    // Bounded like the audit trail. Settlement is recorded separately, so
+    // forgetting old bids costs display history, never money owed.
+    if (this.bids.length > 400) this.bids = this.bids.slice(-400);
     this.currentPriceCents = bid.amount_cents;
     this.highBidderId = bid.bidder_id;
     this.highBidderAlias = alias;
@@ -598,6 +619,7 @@ export class AuctionEngine {
     this.log({
       origin: body.origin,
       actor: alias,
+      actor_id: body.bidder_id,
       actor_kind: body.placed_by,
       action: "bid_placed",
       detail:
@@ -713,7 +735,9 @@ export class AuctionEngine {
               at: b.created_at,
             }));
           const mine = this.audit
-            .filter((e) => alias && e.actor === alias)
+            // By id, never by alias: display names are user-chosen and not unique,
+            // so an attacker could adopt a victim's name to read their activity.
+            .filter((e) => e.actor_id === who)
             .slice(-25)
             .map((e) => ({ at: e.at, action: e.action, detail: e.detail, flagged: e.flagged ?? null }));
           const m = this.mandates.get(who);
@@ -744,6 +768,7 @@ export class AuctionEngine {
           this.log({
             origin,
             actor: clean.value,
+            actor_id: payload.bidder_id,
             actor_kind: "human",
             action: "bidder_joined",
             detail: clean.flagged
@@ -789,6 +814,7 @@ export class AuctionEngine {
           this.log({
             origin,
             actor: this.aliases.get(payload.bidder_id) ?? payload.bidder_id,
+            actor_id: payload.bidder_id,
             actor_kind: "human",
             action: "mandate_set",
             detail:
@@ -862,6 +888,7 @@ export class AuctionEngine {
           this.log({
             origin,
             actor: this.aliases.get(payload.bidder_id) ?? payload.bidder_id,
+            actor_id: payload.bidder_id,
             actor_kind: "agent",
             action: "withdrew",
             detail: reason.value || "Out on this lot.",
@@ -886,6 +913,7 @@ export class AuctionEngine {
             this.log({
               origin,
               actor: this.aliases.get(c.bidder_id) ?? c.bidder_id,
+              actor_id: c.bidder_id,
               actor_kind: "human",
               action: "confirmation_declined",
               detail: `Human declined the agent's ${fmt(c.amount_cents)} bid.`,
@@ -928,6 +956,7 @@ export class AuctionEngine {
           this.log({
             origin,
             actor: this.aliases.get(payload.bidder_id) ?? payload.bidder_id,
+            actor_id: payload.bidder_id,
             actor_kind: "agent",
             action: "ceiling_raise_requested",
             detail: `Asked to raise ceiling ${fmt(m.ceiling_cents)} to ${fmt(req.requested_ceiling_cents)}. Human decides.`,
@@ -959,6 +988,7 @@ export class AuctionEngine {
           this.log({
             origin,
             actor: this.aliases.get(req.bidder_id) ?? req.bidder_id,
+            actor_id: req.bidder_id,
             actor_kind: "human",
             action: payload.approved ? "ceiling_raised" : "ceiling_raise_declined",
             detail: payload.approved

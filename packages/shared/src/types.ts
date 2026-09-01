@@ -170,7 +170,16 @@ export interface AuditEntry {
   at: string;
   /** Which origin initiated this — makes the cross-origin trust boundary visible. */
   origin: string;
+  /** Display name at the time. User-chosen and NOT unique — never filter on it. */
   actor: string;
+  /**
+   * Stable bidder id behind the action. Present for bidder-initiated entries.
+   *
+   * Filtering by alias leaked: two bidders may choose the same display name,
+   * and an attacker could pick a victim's name deliberately to read their
+   * activity. Identity filtering must use this.
+   */
+  actor_id?: string;
   actor_kind: "human" | "agent" | "system";
   action: string;
   detail: string;
