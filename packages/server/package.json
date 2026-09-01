@@ -1,0 +1,19 @@
+{
+  "name": "@openfloor/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server.js --packages=external",
+    "dev": "npm run build && node dist/server.js",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@openfloor/engine": "*",
+    "@openfloor/shared": "*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13"
+  }
+}
