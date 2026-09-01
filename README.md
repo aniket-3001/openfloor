@@ -74,7 +74,8 @@ Three genuinely separate origins. Subdomains are distinct origins, so this is a 
 │ floor.<domain> — auction house                             │
 │  AUCTION TOOLS, exposedTo: [bidder origins]                │
 │   get_auction_state · get_lot_details · get_bid_history    │
-│   check_bid · place_bid · withdraw_from_lot                │
+│   check_bid · get_my_activity · place_bid                  │
+│   withdraw_from_lot                                        │
 │  MANDATE TOOLS, no exposedTo — private to this origin      │
 └──────────┬─────────────────────────────────────────────────┘
            │ WebSocket + REST (authoritative)
@@ -86,7 +87,7 @@ Three genuinely separate origins. Subdomains are distinct origins, so this is a 
 └────────────────────────────────────────────────────────────┘
 ```
 
-**The trust asymmetry is the point.** Exposure is scoped **per tool, not per page**. The six auction tools carry `exposedTo` and are reachable by allowlisted bidder origins. The three mandate tools carry no `exposedTo` at all, so **no other bidder's agent can read or alter your ceiling** — and there is **no bidder-to-bidder channel of any kind**, which per [arXiv 2507.01413](https://arxiv.org/abs/2507.01413) is the single most effective known mitigation against LLM-agent collusion.
+**The trust asymmetry is the point.** Exposure is scoped **per tool, not per page**. The seven auction tools carry `exposedTo` and are reachable by allowlisted bidder origins. The three mandate tools carry no `exposedTo` at all, so **no other bidder's agent can read or alter your ceiling** — and there is **no bidder-to-bidder channel of any kind**, which per [arXiv 2507.01413](https://arxiv.org/abs/2507.01413) is the single most effective known mitigation against LLM-agent collusion.
 
 To be precise about what is *not* claimed: the mandate is stored and enforced by the auction server, because client-side enforcement would not be enforcement at all. The privacy property here is between **bidders**, not between a bidder and the house.
 

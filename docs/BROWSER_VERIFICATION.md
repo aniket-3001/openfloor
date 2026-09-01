@@ -5,7 +5,9 @@ Everything else in this repo tests WebMCP against mocks. This document records w
 **Environment:** Chrome `151.0.7922.174`, Windows 11, launched with a throwaway profile and driven over the Chrome DevTools Protocol. Reproduce with:
 
 ```bash
-npx wrangler dev --port 8132
+# The Node server is the deployment target; the Durable Object adapter still
+# exists but is no longer what runs in production.
+MANDATE_SECRET=dev npm run dev -w @openfloor/server   # :8080
 npm run dev:floor      # http://localhost:5173
 npm run dev:bidder     # http://localhost:5174
 

@@ -12,7 +12,14 @@ Subdomains are distinct origins, so this is a genuine cross-origin boundary. Loc
 
 **The asymmetry is deliberate and load-bearing.** The auction house publishes its mechanics to bidders it has authorized. Bidders publish nothing. No bidder-to-bidder path exists in either direction.
 
-## Why a Durable Object
+## Why a single-threaded room
+
+> **Note:** production runs on Google Cloud Run via `packages/server`. The
+> Durable Object adapter in `packages/worker` still exists and still works, but
+> the reasoning below is what the Node adapter had to reproduce explicitly —
+> see [`DEPLOYMENT.md`](DEPLOYMENT.md).
+
+### The original Durable Object argument
 
 A DO executes one request at a time per instance. Bid serialization therefore comes from the runtime rather than from application locking:
 

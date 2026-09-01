@@ -1,6 +1,6 @@
 # Tool catalogue
 
-Nine tools across two trust domains. The split is the design: auction tools are published to allowlisted bidder origins; mandate tools are published to nobody.
+Ten tools across two trust domains. The split is the design: auction tools are published to allowlisted bidder origins; mandate tools are published to nobody.
 
 Exposure is scoped **per tool, not per page** — the floor origin registers both sets from the same document, with `exposedTo` on one and not the other.
 
