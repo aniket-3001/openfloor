@@ -1,5 +1,6 @@
 export * from "./types.js";
 export * from "./config.js";
+export * from "./session.js";
 export * from "./mandate.js";
 export * from "./sanitize.js";
 export * from "./schemas.js";
