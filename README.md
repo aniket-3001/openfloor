@@ -17,6 +17,8 @@ Three Google Cloud Run services on three genuinely distinct origins. **Verified 
 
 Open the floor in Chrome 149+ with `chrome://flags/#enable-webmcp-testing`, or in ChatGPT's in-app browser. Any other browser gets a fully working manual auction.
 
+New here? [**USER_GUIDE.md**](docs/USER_GUIDE.md) explains the site in plain language, and [**FEATURES.md**](docs/FEATURES.md) lists what was built and what actually works.
+
 Three rival agents — Ada, Rex and Nia — bid continuously against each other in the live room, so the auction is running whenever you arrive. They bid through the ordinary public path, with the same mandate checks, ceilings and audit entries as anyone else.
 
 ---
