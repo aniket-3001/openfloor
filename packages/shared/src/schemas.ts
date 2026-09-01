@@ -149,11 +149,26 @@ export const CHECK_BID: ToolSpec = {
   untrustedContentHint: false,
 };
 
+export const GET_MY_ACTIVITY: ToolSpec = {
+  name: "get_my_activity",
+  title: "Get My Activity",
+  description:
+    "Read back what has happened on your human's behalf this session: every " +
+    "bid you placed and why, which ones they approved, what your limits are, " +
+    "and how much is committed. Use it when they ask what you have been doing, " +
+    "why you stopped, or where their money went.",
+  inputSchema: EMPTY_INPUT,
+  readOnlyHint: true,
+  // Rationales are agent-written and bidder aliases are user-chosen.
+  untrustedContentHint: true,
+};
+
 export const FLOOR_TOOLS = [
   GET_AUCTION_STATE,
   GET_LOT_DETAILS,
   GET_BID_HISTORY,
   CHECK_BID,
+  GET_MY_ACTIVITY,
   PLACE_BID,
   WITHDRAW_FROM_LOT,
 ] as const;

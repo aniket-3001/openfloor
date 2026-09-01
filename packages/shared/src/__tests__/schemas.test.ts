@@ -54,6 +54,7 @@ describe("tool catalogue invariants", () => {
       "get_lot_details",
       "get_bid_history",
       "check_bid",
+      "get_my_activity",
       "place_bid",
       "withdraw_from_lot",
     ]);
@@ -83,6 +84,7 @@ describe("tool catalogue invariants", () => {
       "get_lot_details",
       "get_bid_history",
       "check_bid",
+      "get_my_activity",
       "get_my_mandate",
     ];
     for (const t of ALL) {

@@ -689,6 +689,51 @@ export class AuctionEngine {
           return this.json({ bids: rows });
         }
 
+        case "GET /my-activity": {
+          // Only meaningful now that identity is proven: this is YOUR agent's
+          // conduct, not the room's. Reading someone else's is refused rather
+          // than quietly returning an empty list, which would look like "your
+          // agent did nothing" instead of "that is not yours".
+          const who = authBidderId ?? url.searchParams.get("bidder_id") ?? "";
+          if (!who) return this.json({ error: "No session" }, 401);
+          if (authBidderId && url.searchParams.get("bidder_id") &&
+              url.searchParams.get("bidder_id") !== authBidderId) {
+            return this.json({ error: "That activity is not yours" }, 403);
+          }
+          const alias = this.aliases.get(who);
+          const myBids = this.bids
+            .filter((b) => b.bidder_id === who)
+            .slice(-20)
+            .map((b) => ({
+              lot_id: b.lot_id,
+              amount_cents: b.amount_cents,
+              placed_by: b.placed_by,
+              human_confirmed: b.human_confirmed,
+              rationale: b.rationale ?? null,
+              at: b.created_at,
+            }));
+          const mine = this.audit
+            .filter((e) => alias && e.actor === alias)
+            .slice(-25)
+            .map((e) => ({ at: e.at, action: e.action, detail: e.detail, flagged: e.flagged ?? null }));
+          const m = this.mandates.get(who);
+          return this.json({
+            bidder_id: who,
+            alias: alias ?? null,
+            bids: myBids,
+            events: mine,
+            committed_cents: this.committedCents(who),
+            mandate: m
+              ? {
+                  ceiling_cents: m.ceiling_cents,
+                  notify_above_cents: m.notify_above_cents,
+                  total_budget_cents: m.total_budget_cents ?? null,
+                  auto_bid_enabled: m.auto_bid_enabled,
+                }
+              : null,
+          });
+        }
+
         case "GET /audit":
           return this.json({ entries: this.audit.slice(-60) });
 
