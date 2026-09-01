@@ -300,14 +300,30 @@ button.small { padding: 8px 14px; font-size: 13.5px; }
 
 /* ── Activity ───────────────────────────────────────────── */
 
-.feed { max-height: 340px; overflow-y: auto; }
-.feed-row { padding: 11px 0; border-bottom: 1px solid var(--hair-2); font-size: 14px; }
+/* No inner scroll. A scrollbar nested inside a page that already scrolls
+   crowds the column and traps the wheel; the page is the scroll surface. The
+   feed is bounded by entry count instead, in the component. */
+.feed-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hair-2);
+  font-size: 14px;
+}
 .feed-row:last-child { border-bottom: none; }
-.feed-row.flagged { border-left: 2px solid var(--live); padding-left: 12px; }
-.feed-top { display: flex; gap: 9px; align-items: baseline; flex-wrap: wrap; }
+.feed-row.flagged { border-left: 2px solid var(--live); padding-left: 12px; margin-left: -14px; }
+.feed-body { min-width: 0; flex: 1; }
 .feed-who { font-weight: 500; }
-.feed-when { font-family: var(--num); font-size: 11.5px; color: var(--ink-3); margin-left: auto; }
-.feed-detail { color: var(--ink-2); margin-top: 2px; }
+.feed-detail { color: var(--ink-2); }
+.feed-when {
+  font-family: var(--num);
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
 .empty { color: var(--ink-3); font-size: 14px; padding: 20px 0; }
 

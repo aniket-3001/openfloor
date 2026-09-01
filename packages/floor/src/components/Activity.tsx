@@ -14,22 +14,27 @@ const FLAG_LABEL: Record<string, string> = {
  * action (making the cross-origin trust boundary visible rather than implied),
  * and whether a human personally approved it.
  */
-export function Activity({ entries }: { entries: AuditEntry[] }) {
+export function Activity({ entries, limit = 12 }: { entries: AuditEntry[]; limit?: number }) {
   if (!entries.length) {
     return <div className="empty">Nothing yet.</div>;
   }
 
+  // Bounded by count rather than by a scrollbox: the page is the scroll
+  // surface, and a nested one crowds the column and traps the wheel.
+  const shown = [...entries].reverse().slice(0, limit);
+
   return (
     <div className="feed">
-      {[...entries].reverse().map((e) => (
+      {shown.map((e) => (
         <div key={e.id} className={`feed-row ${e.flagged ? "flagged" : ""}`}>
-          <div className="feed-top">
-            <span className="feed-who">{e.actor}</span>
-            {e.actor_kind !== "system" && <span className="chip">{e.actor_kind}</span>}
+          <div className="feed-body">
+            <span className="feed-who">{e.actor}</span>{" "}
+            <span className="feed-detail">{e.detail}</span>
             {e.flagged && <span className="chip flag">{FLAG_LABEL[e.flagged] ?? e.flagged}</span>}
-            <span className="feed-when">{new Date(e.at).toLocaleTimeString()}</span>
           </div>
-          <div className="feed-detail">{e.detail}</div>
+          <time className="feed-when" dateTime={e.at}>
+            {new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </time>
         </div>
       ))}
     </div>
