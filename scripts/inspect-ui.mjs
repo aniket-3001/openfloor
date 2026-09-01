@@ -112,12 +112,16 @@ async function main() {
       };
 
       // Horizontal overflow anywhere is a layout bug.
+      out.bodyText = (document.body.innerText || "").replace(/\s+/g, " ").trim().slice(0, 260);
+      out.rootChildren = document.getElementById("root")?.children.length ?? 0;
       out.docScrollW = document.documentElement.scrollWidth;
       out.viewportW = window.innerWidth;
       return out;
     })()`);
 
     console.log("sections:", (report.sections || []).join(" · ") || "none");
+    console.log("root children:", report.rootChildren);
+    console.log("text:", report.bodyText || "(empty)");
     console.log(`\nActivity feed: ${report.feed?.count ?? 0} rows, heights ${JSON.stringify(report.feed?.heights ?? [])}px`);
     for (const s of report.feed?.sample ?? []) console.log("  " + s);
 

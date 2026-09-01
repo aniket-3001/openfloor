@@ -150,6 +150,10 @@ export function App() {
     await loadMandate();
   }
 
+  // The default persona is literally called "You", so a naive possessive reads
+  // as "You's reasoning". Rivals keep their own names.
+  const possessive = persona.alias === "You" ? "Your agent's" : `${persona.alias}'s`;
+
   const seconds = state?.seconds_remaining ?? 0;
   const open = state?.lot?.status === "open" && seconds > 0;
   const leading = state?.high_bidder_id === bidderId;
@@ -177,7 +181,7 @@ export function App() {
       {/* The moment this console exists for. */}
       {confirmations.map((c) => (
         <div className="ask" key={c.id} role="alertdialog" aria-label="Approval needed">
-          <h3>{persona.alias} needs your approval</h3>
+          <h3>{persona.alias === "You" ? "Your agent" : persona.alias} needs your approval</h3>
           <div className="amt">{fmt(c.amount_cents)}</div>
           <div className="why">
             {c.rationale || "No reason given."} The price was {fmt(c.price_at_request_cents)} when it
@@ -209,7 +213,7 @@ export function App() {
         .filter((r) => r.status === "pending")
         .map((r) => (
           <div className="ask" key={r.id} role="alertdialog" aria-label="Limit increase requested">
-            <h3>{persona.alias} is asking to raise your limit</h3>
+            <h3>{persona.alias === "You" ? "Your agent" : persona.alias} is asking to raise your limit</h3>
             <div className="amt">
               {fmt(r.current_ceiling_cents)} → {fmt(r.requested_ceiling_cents)}
             </div>
@@ -354,7 +358,7 @@ export function App() {
 
       <section className="section">
         <div className="section-head">
-          <h2>{persona.alias}'s reasoning</h2>
+          <h2>{possessive} reasoning</h2>
           {agent.thinking && <span className="aside">thinking…</span>}
         </div>
         <AgentLog entries={agent.log} />
