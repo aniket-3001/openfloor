@@ -14,27 +14,22 @@ const FLAG_LABEL: Record<string, string> = {
  * action (making the cross-origin trust boundary visible rather than implied),
  * and whether a human personally approved it.
  */
-export function AuditTrail({ entries }: { entries: AuditEntry[] }) {
+export function Activity({ entries }: { entries: AuditEntry[] }) {
   if (!entries.length) {
     return <div className="empty">Nothing yet.</div>;
   }
 
   return (
-    <div className="audit">
+    <div className="feed">
       {[...entries].reverse().map((e) => (
-        <div key={e.id} className={`audit-row ${e.flagged ? "flagged" : ""}`}>
-          <div className="audit-head">
-            <span className="audit-actor">{e.actor}</span>
-            <span className={`tag ${e.actor_kind === "agent" ? "agent" : e.actor_kind === "human" ? "human" : ""}`}>
-              {e.actor_kind}
-            </span>
-            <span className="audit-action">{e.action}</span>
-            {e.flagged && <span className="tag danger">{FLAG_LABEL[e.flagged] ?? e.flagged}</span>}
+        <div key={e.id} className={`feed-row ${e.flagged ? "flagged" : ""}`}>
+          <div className="feed-top">
+            <span className="feed-who">{e.actor}</span>
+            {e.actor_kind !== "system" && <span className="chip">{e.actor_kind}</span>}
+            {e.flagged && <span className="chip flag">{FLAG_LABEL[e.flagged] ?? e.flagged}</span>}
+            <span className="feed-when">{new Date(e.at).toLocaleTimeString()}</span>
           </div>
-          <div className="audit-detail">{e.detail}</div>
-          <div className="audit-origin">
-            {new Date(e.at).toLocaleTimeString()} · {e.origin}
-          </div>
+          <div className="feed-detail">{e.detail}</div>
         </div>
       ))}
     </div>

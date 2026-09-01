@@ -1,85 +1,79 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BidMandate } from "@openfloor/shared";
-import { fmt, describeLayer, detectCapability, type WebMcpLayer } from "@openfloor/shared";
+import { fmt, detectCapability, type WebMcpLayer } from "@openfloor/shared";
 import { api, type PublicLot } from "./lib/api";
 import { useAuction } from "./lib/useAuction";
-import { registerAuctionTools, bidderOrigins } from "./webmcp/registerAuctionTools";
+import { registerAuctionTools } from "./webmcp/registerAuctionTools";
 import { registerMandateTools } from "./webmcp/registerMandateTools";
-import { AuditTrail } from "./components/AuditTrail";
+import { LotPlate } from "./components/LotPlate";
+import { Activity } from "./components/Activity";
 
-/** Stable per-tab identity so a bidder keeps their seat across reloads. */
-function useBidderId(): string {
-  return useMemo(() => {
-    const k = "openfloor.bidder_id";
-    let v = sessionStorage.getItem(k);
-    if (!v) {
-      v = `bidder_${crypto.randomUUID().slice(0, 8)}`;
-      sessionStorage.setItem(k, v);
-    }
-    return v;
-  }, []);
-}
-
+/**
+ * The saleroom.
+ *
+ * Everything here is the lot, the price, your position, or the record. Room
+ * controls, tool counts and transport diagnostics are not a visitor's concern
+ * and are no longer on the page — the auctioneer controls stay reachable at
+ * ?admin for running a demo, which is all they were ever for.
+ *
+ * Identity now comes from the session rather than a per-tab random id, so the
+ * page can say "you are leading" and mean it.
+ */
 export function App() {
-  const bidderId = useBidderId();
   const { state, audit, confirmations, raiseRequests, connected, refresh, setRaiseRequests } =
     useAuction();
+  const [me, setMe] = useState<{ bidder_id: string; alias: string; handle: string | null } | null>(null);
   const [mandate, setMandate] = useState<BidMandate | null>(null);
   const [lot, setLot] = useState<PublicLot | null>(null);
   const [history, setHistory] = useState<
     { alias: string; amount_cents: number; placed_by: "human" | "agent"; human_confirmed: boolean; at: string }[]
   >([]);
   const [layer, setLayer] = useState<WebMcpLayer>("L3_no_webmcp");
-  const [alias, setAlias] = useState("");
-  const [joined, setJoined] = useState(false);
-  const [aliasFlagged, setAliasFlagged] = useState(false);
-  const [manualBid, setManualBid] = useState("");
+  const [bid, setBid] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
-  const prevPrice = useRef<number>(0);
-  const [bump, setBump] = useState(false);
+  const [moved, setMoved] = useState(false);
+  const prevPrice = useRef(0);
 
-  const loadMandate = useCallback(async () => {
-    const { mandate: m } = await api.getMandate(bidderId);
-    setMandate(m);
-  }, [bidderId]);
+  const admin = useMemo(() => new URLSearchParams(location.search).has("admin"), []);
+  const bidderId = me?.bidder_id ?? "";
 
-  /**
-   * Register both tool sets.
-   *
-   * The five auction tools carry `exposedTo` and are reachable by allowlisted
-   * bidder origins. The three mandate tools carry no `exposedTo` at all and stay
-   * private to this page — exposure is scoped per tool, not per document.
-   */
+  const loadMe = useCallback(async () => {
+    try {
+      const { session } = await api.session();
+      setMe(session);
+      if (session) setMandate((await api.getMandate(session.bidder_id)).mandate);
+    } catch {
+      /* transient */
+    }
+  }, []);
+
   useEffect(() => {
-    let disposeAuction: (() => void) | undefined;
-    let disposeMandate: (() => void) | undefined;
+    void loadMe();
+  }, [loadMe, state?.current_price_cents]);
+
+  /* Auction tools carry exposedTo; mandate tools deliberately do not. Aborting
+     the registration signal is the only way to remove a tool, so both disposers
+     run on unmount. */
+  useEffect(() => {
+    if (!bidderId) return;
+    let a: (() => void) | undefined;
+    let b: (() => void) | undefined;
     void (async () => {
       const cap = await detectCapability([]);
       setLayer(cap.layer);
       if (cap.layer === "L3_no_webmcp") return;
-      disposeAuction = await registerAuctionTools({
+      a = await registerAuctionTools({ bidderId, onActivity: () => void refresh() });
+      b = await registerMandateTools({
         bidderId,
-        onActivity: () => void refresh(),
-      });
-      disposeMandate = await registerMandateTools({
-        bidderId,
-        onChanged: () => void Promise.all([refresh(), loadMandate()]),
+        onChanged: () => void Promise.all([refresh(), loadMe()]),
       });
     })();
-    // Aborting the registration signal is the only way to remove tools —
-    // the spec has no unregisterTool.
     return () => {
-      disposeAuction?.();
-      disposeMandate?.();
+      a?.();
+      b?.();
     };
-  }, [bidderId, refresh, loadMandate]);
+  }, [bidderId, refresh, loadMe]);
 
-  /* Keep the mandate panel in step with the live price. */
-  useEffect(() => {
-    void loadMandate();
-  }, [state?.current_price_cents, loadMandate]);
-
-  /* Keep lot + history in step with auction events. */
   useEffect(() => {
     void (async () => {
       const [{ lot: l }, { bids }] = await Promise.all([api.lot(), api.history(12)]);
@@ -88,32 +82,24 @@ export function App() {
     })();
   }, [state?.current_price_cents, state?.lot?.id, state?.lot?.status]);
 
-  /* Flash the price when it moves. */
   useEffect(() => {
     if (!state) return;
     if (prevPrice.current && state.current_price_cents !== prevPrice.current) {
-      setBump(true);
-      const t = setTimeout(() => setBump(false), 430);
+      setMoved(true);
+      const t = setTimeout(() => setMoved(false), 520);
       return () => clearTimeout(t);
     }
     prevPrice.current = state.current_price_cents;
   }, [state?.current_price_cents]);
 
-  const cap = describeLayer(layer);
   const seconds = state?.seconds_remaining ?? 0;
-  const isOpen = state?.lot?.status === "open" && seconds > 0;
+  const open = state?.lot?.status === "open" && seconds > 0;
   const minNext = (state?.current_price_cents ?? 0) + (state?.min_increment_cents ?? 100);
+  const leading = !!bidderId && state?.high_bidder_id === bidderId;
 
-  async function join() {
-    const res = await api.join({ bidder_id: bidderId, alias: alias || "Guest" });
-    setAlias(res.alias);
-    setAliasFlagged(res.flagged);
-    setJoined(true);
-  }
-
-  async function placeManualBid() {
+  async function placeBid() {
     if (!state?.lot) return;
-    const cents = Math.round(parseFloat(manualBid) * 100);
+    const cents = Math.round(parseFloat(bid) * 100);
     if (!Number.isFinite(cents)) return;
     const res = await api.bid({
       bidder_id: bidderId,
@@ -122,57 +108,42 @@ export function App() {
       placed_by: "human",
     });
     setNotice(res.message);
-    setManualBid("");
+    setBid("");
     void refresh();
   }
 
   return (
     <div className="wrap">
       <header className="masthead">
-        <div>
-          <div className="brand">
-            Open<span>Floor</span>
-          </div>
-          <div className="tagline">
-            Your agent bids. You set the limits. Everything on the record.
-          </div>
-        </div>
-        <div className="badges">
-          <span className={`badge ${connected ? "ok" : ""}`}>
-            {connected ? "live" : "reconnecting"}
-          </span>
-          <span className="badge">room · {state?.room_id ?? "—"}</span>
+        <div className="brand">OpenFloor</div>
+        <div className="masthead-right">
+          {open && (
+            <span className={`live-dot ${connected ? "" : "idle"}`}>
+              {connected ? "Live" : "Reconnecting"}
+            </span>
+          )}
+          {me && <span className="who">{me.handle ?? me.alias}</span>}
         </div>
       </header>
 
-      <div className={`cap ${layer === "L1_cross_origin" ? "l1" : layer === "L2_same_origin" ? "l2" : "l3"}`}>
-        <div className="dot" />
-        <div>
-          <div className="cap-title">{cap.label}</div>
-          <div className="cap-detail">{cap.detail}</div>
-          {layer !== "L3_no_webmcp" && (
-            <div className="cap-detail mono" style={{ fontSize: 11.5, marginTop: 4 }}>
-              6 auction tools exposed to {bidderOrigins().join(", ")} · 3 mandate tools private to
-              this origin
-            </div>
-          )}
-        </div>
+      {/* The auction announces itself to a screen reader without adding chrome. */}
+      <div className="sr" aria-live="polite" aria-atomic="true">
+        {open && state ? `Current bid ${fmt(state.current_price_cents)}, ${seconds} seconds left.` : ""}
       </div>
 
-      {/* ── The agent stopping at the line you drew ───────────────────── */}
+      {/* The only thing allowed to interrupt: your agent asking permission. */}
       {confirmations
         .filter((c) => c.bidder_id === bidderId)
         .map((c) => (
-          <div className="confirm" key={c.id}>
-            <h3>Your agent is asking before it crosses your line</h3>
+          <div className="ask" key={c.id} role="alertdialog" aria-label="Approval needed">
+            <h3>Your agent needs approval</h3>
             <div className="amt">{fmt(c.amount_cents)}</div>
             <div className="why">
-              {c.rationale || "No reason given."} — the price was {fmt(c.price_at_request_cents)}{" "}
-              when it asked. This bid has <strong>not</strong> been placed.
+              {c.rationale || "No reason given."} The price was {fmt(c.price_at_request_cents)} when it
+              asked. Nothing has been bid.
             </div>
-            <div className="controls">
+            <div className="act">
               <button
-                className="approve"
                 onClick={async () => {
                   await api.confirm({ confirmation_id: c.id, approved: true });
                   void refresh();
@@ -181,6 +152,7 @@ export function App() {
                 Approve {fmt(c.amount_cents)}
               </button>
               <button
+                className="quiet"
                 onClick={async () => {
                   await api.confirm({ confirmation_id: c.id, approved: false });
                   void refresh();
@@ -192,34 +164,33 @@ export function App() {
           </div>
         ))}
 
-      {/* ── The agent asking to raise its ceiling — it can only ask ────── */}
       {raiseRequests
         .filter((r) => r.bidder_id === bidderId && r.status === "pending")
         .map((r) => (
-          <div className="confirm" key={r.id}>
-            <h3>Your agent wants a higher ceiling</h3>
+          <div className="ask" key={r.id} role="alertdialog" aria-label="Limit increase requested">
+            <h3>Your agent is asking to raise your limit</h3>
             <div className="amt">
               {fmt(r.current_ceiling_cents)} → {fmt(r.requested_ceiling_cents)}
             </div>
             <div className="why">{r.justification}</div>
-            <div className="controls">
+            <div className="act">
               <button
-                className="approve"
                 onClick={async () => {
                   await api.resolveCeilingRaise({ request_id: r.id, approved: true });
-                  setRaiseRequests((prev) =>
-                    prev.map((x) => (x.id === r.id ? { ...x, status: "approved" as const } : x)),
+                  setRaiseRequests((p) =>
+                    p.map((x) => (x.id === r.id ? { ...x, status: "approved" as const } : x)),
                   );
-                  void Promise.all([refresh(), loadMandate()]);
+                  void Promise.all([refresh(), loadMe()]);
                 }}
               >
                 Raise to {fmt(r.requested_ceiling_cents)}
               </button>
               <button
+                className="quiet"
                 onClick={async () => {
                   await api.resolveCeilingRaise({ request_id: r.id, approved: false });
-                  setRaiseRequests((prev) =>
-                    prev.map((x) => (x.id === r.id ? { ...x, status: "declined" as const } : x)),
+                  setRaiseRequests((p) =>
+                    p.map((x) => (x.id === r.id ? { ...x, status: "declined" as const } : x)),
                   );
                 }}
               >
@@ -229,206 +200,194 @@ export function App() {
           </div>
         ))}
 
-      <div className="layout">
-        <div>
-          {/* ── Lot ─────────────────────────────────────────── */}
-          <div className="panel">
-            <h2>Current lot</h2>
-            {!lot && <div className="empty">No lot open. Start the auction to begin.</div>}
-            {lot && (
-              <>
-                <h3 className="lot-title">{lot.title}</h3>
-                <div className="lot-meta">
-                  {lot.condition} · estimate {fmt(lot.estimate_low_cents)}–{fmt(lot.estimate_high_cents)} ·
-                  increment {fmt(lot.min_increment_cents)}
+      {!lot ? (
+        <div className="empty">The saleroom is quiet. The next lot opens shortly.</div>
+      ) : (
+        <div className="lot">
+          <LotPlate imageRef={lot.image_ref} />
+
+          <div>
+            <div className="eyebrow">
+              Lot {lot.id.replace(/^lot-/, "").toUpperCase()}
+            </div>
+            <h1 className="lot-title">{lot.title}</h1>
+            <div className="lot-meta">
+              {lot.condition}
+              <span className="dot">·</span>
+              Estimate {fmt(lot.estimate_low_cents)}–{fmt(lot.estimate_high_cents)}
+            </div>
+
+            <div className="price-block">
+              <div className="price-row">
+                <div className={`price ${moved ? "moved" : ""}`}>
+                  {fmt(state?.current_price_cents ?? lot.starting_price_cents)}
                 </div>
-
-                <div className="price-row">
-                  <div>
-                    <div className="price-label">Current bid</div>
-                    <div className={`price ${bump ? "bump" : ""}`}>
-                      {fmt(state?.current_price_cents ?? lot.starting_price_cents)}
-                    </div>
+                <div>
+                  <div className={`clock ${seconds <= 10 && open ? "urgent" : ""}`}>
+                    {open ? `0:${String(seconds).padStart(2, "0")}` : "Closed"}
                   </div>
-                  <div>
-                    <div className={`clock ${seconds <= 10 && isOpen ? "urgent" : ""}`}>
-                      {isOpen ? `0:${String(seconds).padStart(2, "0")}` : "—"}
-                    </div>
-                    {state?.clock_extended && isOpen && (
-                      <div className="clock-note">extended · anti-snipe</div>
-                    )}
-                  </div>
+                  {state?.clock_extended && open && <div className="clock-note">Extended</div>}
                 </div>
-
-                <div className="badges">
-                  <span className={`badge ${state?.reserve_met ? "ok" : "warn"}`}>
-                    {state?.reserve_met ? "reserve met" : "reserve not met"}
-                  </span>
-                  {state?.high_bidder_alias && (
-                    <span className="badge accent">high · {state.high_bidder_alias}</span>
-                  )}
-                  <span className="badge">{state?.bid_count ?? 0} bids</span>
-                  <span className="badge">{state?.lot?.status ?? "pending"}</span>
-                </div>
-
-                <p className="lot-desc">{lot.description}</p>
-              </>
-            )}
-          </div>
-
-          {/* ── Bids ────────────────────────────────────────── */}
-          <div className="panel">
-            <h2>Bidding</h2>
-            {history.length === 0 && <div className="empty">No bids yet.</div>}
-            <ul className="bid-list">
-              {history.map((b, i) => (
-                <li className="bid-row" key={`${b.at}-${i}`}>
-                  <div className="bid-who">
-                    <span className={`tag ${b.placed_by}`}>{b.placed_by}</span>
-                    <span className="bid-alias">{b.alias}</span>
-                    {b.human_confirmed && b.placed_by === "agent" && (
-                      <span className="tag human">approved</span>
-                    )}
-                  </div>
-                  <span className="bid-amt">{fmt(b.amount_cents)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* ── What the agent is operating under ─────────────── */}
-          <div className="panel">
-            <h2>Your agent's mandate</h2>
-            {mandate ? (
-              <>
-                <div className="mandate-strip">
-                  <div>
-                    <span className="k">bids freely below</span>
-                    <span className="v">{fmt(mandate.notify_above_cents)}</span>
-                  </div>
-                  <div>
-                    <span className="k">asks you above</span>
-                    <span className="v sup">{fmt(mandate.notify_above_cents)}</span>
-                  </div>
-                  <div>
-                    <span className="k">cannot pass</span>
-                    <span className="v wall">{fmt(mandate.ceiling_cents)}</span>
-                  </div>
-                  {mandate.total_budget_cents !== undefined && (
-                    <div>
-                      <span className="k">total budget</span>
-                      <span className="v wall">{fmt(mandate.total_budget_cents)}</span>
-                    </div>
-                  )}
-                  <div>
-                    <span className="k">auto-bidding</span>
-                    <span className="v">{mandate.auto_bid_enabled ? "on" : "off"}</span>
-                  </div>
-                </div>
-                {mandate.strategy_note && (
-                  <div className="hint">Your guidance: “{mandate.strategy_note}”</div>
+              </div>
+              <div className="price-sub">
+                <span className={state?.reserve_met ? "met" : ""}>
+                  {state?.reserve_met ? "Reserve met" : "Reserve not met"}
+                </span>
+                <span>{state?.bid_count ?? 0} bids</span>
+                {leading ? (
+                  <span className="met">You are leading</span>
+                ) : (
+                  state?.high_bidder_alias && <span>{state.high_bidder_alias} leads</span>
                 )}
-                <div className="hint">
-                  Enforced on the server against a signed mandate. No tool in this app can raise
-                  that ceiling — the agent can only ask you.
-                  {mandate.total_budget_cents !== undefined &&
-                    " The ceiling caps one bid; the budget caps every lot together."}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="empty">No mandate set.</div>
-                <div className="hint">
-                  Tell your agent something like “bid for me up to $80, but check with me before
-                  you pass $65.” It will call <span className="mono">set_bid_mandate</span>.
-                </div>
-              </>
-            )}
-          </div>
+              </div>
+            </div>
 
-          {/* ── Manual bidding: the L3 fallback and the human override ── */}
-          <div className="panel">
-            <h2>Bid by hand</h2>
-            {!joined ? (
-              <>
-                <div className="field">
-                  <label htmlFor="alias">Display name</label>
-                  <input
-                    id="alias"
-                    type="text"
-                    value={alias}
-                    placeholder="How other bidders see you"
-                    onChange={(e) => setAlias(e.target.value)}
-                  />
-                </div>
-                <button className="primary" onClick={() => void join()}>
-                  Take a seat
-                </button>
-                <div className="hint">
-                  Display names are sanitized server-side before any agent sees them.
-                </div>
-              </>
-            ) : (
-              <>
-                {aliasFlagged && (
-                  <div className="badges" style={{ marginBottom: 10 }}>
-                    <span className="badge" style={{ color: "var(--red)" }}>
-                      your display name tripped the injection filter — neutralized
-                    </span>
-                  </div>
-                )}
-                <div className="field">
-                  <label htmlFor="amt">
-                    Your bid — minimum {fmt(minNext)}
-                  </label>
-                  <input
-                    id="amt"
-                    type="number"
-                    step="0.01"
-                    value={manualBid}
-                    placeholder={(minNext / 100).toFixed(2)}
-                    onChange={(e) => setManualBid(e.target.value)}
-                  />
-                </div>
-                <div className="controls">
-                  <button className="primary" disabled={!isOpen} onClick={() => void placeManualBid()}>
-                    Place bid as {alias}
-                  </button>
-                  <button disabled={!isOpen} onClick={() => setManualBid((minNext / 100).toFixed(2))}>
-                    Minimum
-                  </button>
-                </div>
-                {notice && <div className="hint">{notice}</div>}
-              </>
-            )}
-          </div>
-
-          {/* ── Auctioneer controls (demo conveniences) ─────── */}
-          <div className="panel">
-            <h2>Auctioneer</h2>
-            <div className="controls">
-              <button onClick={() => void api.start().then(refresh)}>Open lot</button>
-              <button onClick={() => void api.next().then(refresh)}>Next lot</button>
-              <button className="danger" onClick={() => void api.reset().then(refresh)}>
-                Reset room
+            <div className="act">
+              <input
+                type="number"
+                step="0.01"
+                inputMode="decimal"
+                aria-label={`Your bid, minimum ${fmt(minNext)}`}
+                placeholder={(minNext / 100).toFixed(2)}
+                value={bid}
+                disabled={!open}
+                onChange={(e) => setBid(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void placeBid()}
+              />
+              <button disabled={!open || leading} onClick={() => void placeBid()}>
+                Place bid
+              </button>
+              <button
+                className="quiet small"
+                disabled={!open}
+                onClick={() => setBid((minNext / 100).toFixed(2))}
+              >
+                {fmt(minNext)}
               </button>
             </div>
-            <div className="hint">
-              All settlement is simulated. No payment is taken and no goods change hands.
-            </div>
-          </div>
-        </div>
+            {notice && <div className="note">{notice}</div>}
 
-        {/* ── Audit ─────────────────────────────────────────── */}
-        <div>
-          <div className="panel">
-            <h2>Audit trail</h2>
-            <AuditTrail entries={audit} />
-            <div className="hint">
-              Every tool call, which origin made it, and whether a human approved it.
-            </div>
+            <p className="lot-desc">{lot.description}</p>
           </div>
         </div>
+      )}
+
+      {mandate && (
+        <section className="section">
+          <div className="section-head">
+            <h2>Your limits</h2>
+            <span className="aside">
+              {mandate.auto_bid_enabled ? "Agent bidding on" : "Agent bidding off"}
+            </span>
+          </div>
+          <Band
+            price={state?.current_price_cents ?? 0}
+            notify={mandate.notify_above_cents}
+            ceiling={mandate.ceiling_cents}
+          />
+          <div className="facts">
+            <div className="fact">
+              <span className="k">Bids alone below</span>
+              <span className="v">{fmt(mandate.notify_above_cents)}</span>
+            </div>
+            <div className="fact">
+              <span className="k">Asks you above</span>
+              <span className="v sup">{fmt(mandate.notify_above_cents)}</span>
+            </div>
+            <div className="fact">
+              <span className="k">Never passes</span>
+              <span className="v wall">{fmt(mandate.ceiling_cents)}</span>
+            </div>
+            {mandate.total_budget_cents !== undefined && (
+              <div className="fact">
+                <span className="k">Budget, all lots</span>
+                <span className="v wall">{fmt(mandate.total_budget_cents)}</span>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      <section className="section">
+        <div className="section-head">
+          <h2>Bidding</h2>
+        </div>
+        {!history.length ? (
+          <div className="empty">No bids yet.</div>
+        ) : (
+          <ul className="rows">
+            {history.map((b, i) => (
+              <li className={`row ${b.alias === me?.alias ? "mine" : ""}`} key={`${b.at}-${i}`}>
+                <span className="row-l">
+                  <span className="row-name">{b.alias}</span>
+                  {b.placed_by === "agent" && <span className="chip agent">agent</span>}
+                  {b.human_confirmed && b.placed_by === "agent" && (
+                    <span className="chip ok">approved</span>
+                  )}
+                </span>
+                <span className="row-amt">{fmt(b.amount_cents)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <h2>Activity</h2>
+          <span className="aside">Every action, and who authorised it</span>
+        </div>
+        <Activity entries={audit} />
+      </section>
+
+      {admin && (
+        <section className="section">
+          <div className="section-head">
+            <h2>Saleroom controls</h2>
+          </div>
+          <div className="act">
+            <button className="quiet small" onClick={() => void api.start().then(refresh)}>
+              Open lot
+            </button>
+            <button className="quiet small" onClick={() => void api.next().then(refresh)}>
+              Next lot
+            </button>
+            <button className="quiet small" onClick={() => void api.reset().then(refresh)}>
+              Reset
+            </button>
+          </div>
+        </section>
+      )}
+
+      <footer className="foot">
+        <span>Bids are simulated. No payment is taken and no goods change hands.</span>
+        <span>
+          {layer === "L3_no_webmcp"
+            ? "Manual bidding — enable WebMCP in Chrome 149+ to delegate to an agent"
+            : "Agent bidding available"}
+        </span>
+      </footer>
+    </div>
+  );
+}
+
+/** The mandate, drawn: free below, supervised between, impossible past. */
+function Band({ price, notify, ceiling }: { price: number; notify: number; ceiling: number }) {
+  const max = Math.max(ceiling * 1.1, price * 1.05, 1);
+  const pct = (v: number) => Math.min(100, Math.max(0, (v / max) * 100));
+  return (
+    <div className="band">
+      <div className="band-track">
+        <div className="band-auto" style={{ width: `${pct(notify)}%` }} />
+        <div
+          className="band-sup"
+          style={{ left: `${pct(notify)}%`, width: `${Math.max(0, pct(ceiling) - pct(notify))}%` }}
+        />
+        <div className="band-mark" style={{ left: `${pct(price)}%` }} />
+      </div>
+      <div className="band-legend">
+        <span>{fmt(0)}</span>
+        <span>{fmt(ceiling)}</span>
       </div>
     </div>
   );

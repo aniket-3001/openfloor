@@ -25,6 +25,13 @@ function url(path: string, params: Record<string, string | number> = {}): string
   return u.toString();
 }
 
+async function getRoot<T>(path: string): Promise<T> {
+  const u = new URL(`${BASE}/api${path}`, BASE || window.location.origin);
+  const res = await fetch(u.toString(), { credentials: "include" });
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+  return (await res.json()) as T;
+}
+
 async function get<T>(path: string, params?: Record<string, string | number>): Promise<T> {
   const res = await fetch(url(path, params), { credentials: "include" });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
@@ -74,6 +81,10 @@ export const api = {
       }[];
     }>("/history", { limit }),
   audit: () => get<{ entries: AuditEntry[] }>("/audit"),
+
+  /** Who am I? Issued automatically on first contact, so this never 401s. */
+  session: () =>
+    getRoot<{ session: { bidder_id: string; alias: string; handle: string | null } | null }>("/session"),
 
   myActivity: () =>
     get<{

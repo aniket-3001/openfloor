@@ -55,6 +55,8 @@ function mockApi(over: Record<string, unknown> = {}) {
             ],
           };
         if (u.includes("/audit")) return { entries: [] };
+        if (u.includes("/session"))
+          return { session: { bidder_id: "b_test", alias: "Guest", handle: null } };
         if (u.includes("/mandate")) return { mandate: null };
         return {};
       })();
@@ -88,8 +90,7 @@ afterEach(() => {
 describe("floor renders without WebMCP (the L3 fallback)", () => {
   it("mounts without crashing", async () => {
     render(<App />);
-    // The tagline is unique; the brand mark appears in several places.
-    expect(await screen.findByText(/Your agent bids\. You set the limits\./)).toBeTruthy();
+    expect(await screen.findByText("OpenFloor")).toBeTruthy();
   });
 
   it("shows the lot and the live price", async () => {
@@ -101,14 +102,15 @@ describe("floor renders without WebMCP (the L3 fallback)", () => {
 
   it("tells the visitor WebMCP is unavailable rather than failing silently", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByText(/Manual mode/i)).toBeTruthy());
-    expect(screen.getByText(/enable-webmcp-testing/)).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByText(/enable WebMCP in Chrome 149\+/i)).toBeTruthy(),
+    );
   });
 
   it("offers manual bidding so the auction is still usable", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByText(/Bid by hand/i)).toBeTruthy());
-    expect(screen.getByText(/Take a seat/i)).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("button", { name: /Place bid/i })).toBeTruthy());
+    expect(screen.getByLabelText(/Your bid/i)).toBeTruthy();
   });
 
   it("renders the bid history including who placed each bid", async () => {
@@ -124,15 +126,31 @@ describe("floor renders without WebMCP (the L3 fallback)", () => {
 
   it("shows reserve status without ever revealing the reserve amount", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByText(/reserve not met/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Reserve not met/i)).toBeTruthy());
     // The reserve figure must never reach the DOM.
     expect(document.body.textContent).not.toMatch(/55\.00|reserve_cents/);
   });
 
-  it("prompts for a mandate when none is set", async () => {
+  it("shows no limits panel until a mandate exists", async () => {
+    // Absence is the correct state here: an empty scaffold would be chrome
+    // describing something that has not happened yet.
     render(<App />);
-    await waitFor(() => expect(screen.getByText(/No mandate set/i)).toBeTruthy());
-    expect(screen.getByText(/set_bid_mandate/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Bidding")).toBeTruthy());
+    expect(screen.queryByText(/Your limits/i)).toBeNull();
+  });
+
+  it("renders the lot plate rather than leaving image_ref unused", async () => {
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: /rangefinder camera/i })).toBeTruthy(),
+    );
+  });
+
+  it("hides saleroom controls from an ordinary visitor", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Activity")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: /Reset/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Next lot/i })).toBeNull();
   });
 });
 
@@ -142,9 +160,8 @@ describe("floor detects WebMCP when present", () => {
     vi.stubGlobal("document", Object.assign(document, { modelContext: { registerTool } }));
 
     render(<App />);
-    await waitFor(() => expect(screen.getByText(/Same-origin WebMCP/i)).toBeTruthy());
     // Seven auction tools plus three private mandate tools.
-    await waitFor(() => expect(registerTool.mock.calls.length).toBe(10));
+    await waitFor(() => expect(registerTool.mock.calls.length).toBe(10), { timeout: 3000 });
 
     const names = registerTool.mock.calls.map((c) => (c[0] as { name: string }).name);
     expect(names).toContain("place_bid");
