@@ -29,7 +29,17 @@ COPY packages/bidder/package.json   packages/bidder/
 # script. The lockfile was generated on Windows, so the linux-x64 binary must be
 # resolved during this build — omitting optionals fails with
 # "The package @esbuild/linux-x64 could not be found".
-RUN npm ci --no-audit --no-fund
+#
+# Bounded sockets and a raised heap: this install resolves devDependencies for
+# five workspaces at once, and on a constrained builder npm died with
+# "Exit handler never called" — its symptom for being starved of memory rather
+# than a dependency problem. The single retry covers the residual flake, since
+# a transient install failure should not fail a deploy that is otherwise green.
+ENV NPM_CONFIG_AUDIT=false \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_MAXSOCKETS=4 \
+    NODE_OPTIONS=--max-old-space-size=4096
+RUN npm ci --no-audit --no-fund || (echo "npm ci failed, retrying once" && npm cache clean --force && npm ci --no-audit --no-fund)
 
 COPY . .
 
