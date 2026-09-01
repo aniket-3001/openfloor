@@ -93,25 +93,54 @@ jobs:
           echo "FLOOR=https://openfloor-floor-${PROJECT_NUMBER}.${REGION}.run.app"   >> $GITHUB_ENV
           echo "BIDDER=https://openfloor-bidder-${PROJECT_NUMBER}.${REGION}.run.app" >> $GITHUB_ENV
 
+      - name: Build the image once
+        run: |
+          # ONE build, three deploys. The premise is "one image, three roles",
+          # so building per-service was both wasteful and the cause of a real
+          # failure: three heavy concurrent npm installs exhausted memory on the
+          # default builder and npm died with "Exit handler never called".
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/openfloor/app:${GITHUB_SHA}"
+          if ! gcloud artifacts repositories describe openfloor --location="$REGION" >/dev/null 2>&1; then
+            gcloud artifacts repositories create openfloor \
+              --repository-format=docker --location="$REGION" --quiet
+          fi
+          gcloud builds submit --tag "$IMAGE" --machine-type=e2-highcpu-8 --timeout=1200s --quiet
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
       - name: Deploy API
         run: |
           gcloud run deploy openfloor-api \
-            --source . --region "$REGION" --allow-unauthenticated --quiet \
-            --max-instances=1 --min-instances=1 --concurrency=80 --timeout=3600 --memory=512Mi \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --quiet \
+            --max-instances=1 \
+            --min-instances=1 \
+            --concurrency=80 \
+            --timeout=3600 \
+            --memory=512Mi \
             --set-env-vars="^@^OPENFLOOR_ROLE=api@MANDATE_SECRET=${{ secrets.MANDATE_SECRET }}@ALLOWED_ORIGINS=$FLOOR,$BIDDER@OPENFLOOR_RIVALS=ada,rex,nia@OPENFLOOR_RIVAL_TICK_MS=2500@PUBLIC_ROOM=main"
 
       - name: Deploy floor
         run: |
           gcloud run deploy openfloor-floor \
-            --source . --region "$REGION" --allow-unauthenticated --quiet \
-            --max-instances=2 --memory=512Mi \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --quiet \
+            --max-instances=2 \
+            --memory=512Mi \
             --set-env-vars="^@^OPENFLOOR_ROLE=floor@STATIC_DIR=static/floor@PUBLIC_API_BASE=$API@PUBLIC_BIDDER_ORIGINS=$BIDDER@PUBLIC_ROOM=main"
 
       - name: Deploy bidder console
         run: |
           gcloud run deploy openfloor-bidder \
-            --source . --region "$REGION" --allow-unauthenticated --quiet \
-            --max-instances=2 --memory=512Mi \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --quiet \
+            --max-instances=2 \
+            --memory=512Mi \
             --set-env-vars="^@^OPENFLOOR_ROLE=bidder@STATIC_DIR=static/bidder@PUBLIC_API_BASE=$API@PUBLIC_FLOOR_ORIGIN=$FLOOR@PUBLIC_ROOM=main@PUBLIC_PERSONA=you"
 
       - name: Smoke-test the deployment
