@@ -109,24 +109,31 @@ jobs:
                  --repository-format=docker --location=$REGION"
             exit 1
           fi
-          # --suppress-logs is required, not cosmetic: gcloud tries to STREAM
-          # build logs, which needs Viewer/Owner on the project. A deploy
-          # service account does not have that, so the stream fails and gcloud
-          # exits non-zero even when the build itself succeeds. Suppressing the
-          # stream still waits for completion and still returns the real result.
-          set +e
-          gcloud builds submit --tag "$IMAGE" \
-            --machine-type=e2-highcpu-8 --timeout=1200s --suppress-logs --quiet
-          BUILD_RC=$?
-          set -e
-          if [ $BUILD_RC -ne 0 ]; then
-            echo "Build failed. Fetching logs:"
-            BID=$(gcloud builds list --region="$REGION" --limit=1 --format="value(id)")
-            gcloud builds log "$BID" --region="$REGION" 2>&1 | tail -60 || true
-            exit $BUILD_RC
-          fi
+          # Submit ASYNC and poll, rather than letting gcloud wait.
+          #
+          # `gcloud builds submit` streams build logs while it waits, and
+          # streaming requires Viewer/Owner on the project. A deploy service
+          # account holds neither by design, so gcloud exited non-zero on a
+          # build that had actually SUCCEEDED — a green build reported red.
+          # --suppress-logs did not prevent the attempt. Polling the build
+          # status removes log streaming from the path entirely.
+          BID=$(gcloud builds submit --tag "$IMAGE" \
+                  --machine-type=e2-highcpu-8 --timeout=1200s \
+                  --async --format="value(id)" --quiet)
+          echo "build $BID"
+          for _ in $(seq 1 120); do
+            ST=$(gcloud builds describe "$BID" --format="value(status)" 2>/dev/null || echo UNKNOWN)
+            case "$ST" in
+              SUCCESS) echo "build succeeded"; break ;;
+              FAILURE|TIMEOUT|CANCELLED|EXPIRED)
+                echo "build $ST — log tail:"
+                gcloud builds log "$BID" 2>&1 | tail -60 || true
+                exit 1 ;;
+              *) sleep 10 ;;
+            esac
+          done
+          test "$ST" = "SUCCESS"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
-
       - name: Deploy API
         run: |
           gcloud run deploy openfloor-api \
