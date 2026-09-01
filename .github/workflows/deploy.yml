@@ -129,4 +129,8 @@ jobs:
           echo "Live: $FLOOR"
 
       - name: Open a lot so visitors arrive to a running auction
-        run: curl -sf -X POST --max-time 30 "$API/api/start?room=main" -H 'Content-Type: application/json' -d '{}' >/dev/null || true
+        # Block scalar, not a one-liner: a colon-space inside a plain YAML
+        # scalar reads as a nested mapping, which is what broke the first run.
+        run: |
+          curl -sf -X POST --max-time 30 "$API/api/start?room=main" \
+            -H 'Content-Type: application/json' -d '{}' >/dev/null || true
