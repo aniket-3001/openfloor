@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BidMandate } from "@openfloor/shared";
 import {
   fmt,
-  describeLayer,
   detectCapability,
   mountToolBridge,
   loadConfig,
@@ -13,8 +12,6 @@ import { api, type Headroom, type PublicLot } from "./lib/api";
 import { useAuction } from "./lib/useAuction";
 import { useBidderTools } from "./webmcp/useBidderTools";
 import { useAgent } from "./agent/useAgent";
-
-import { MandateBand } from "./components/MandateBand";
 import { AgentLog } from "./components/AgentLog";
 
 const CONFIG = loadConfig();
@@ -33,21 +30,32 @@ function useBidderId(personaId: string): string {
   }, [personaId]);
 }
 
+/**
+ * The bidder's console.
+ *
+ * Same register as the saleroom: one column, hairline rules, the numbers that
+ * matter set large and everything else deferring to them. This previously read
+ * as a dashboard — a two-column panel grid, status badges, and a transport
+ * diagnostic banner — none of which is a bidder's concern.
+ *
+ * What remains is the four things a person delegating actually needs: what is
+ * on the block, what their limits are, what their agent is thinking, and the
+ * moment it asks permission.
+ */
 export function App() {
   const persona = getPersona(PERSONA_ID);
   const bidderId = useBidderId(persona.id);
-  const { state, confirmations, raiseRequests, connected, refresh, setRaiseRequests } = useAuction(bidderId);
+  const { state, confirmations, raiseRequests, connected, refresh, setRaiseRequests } =
+    useAuction(bidderId);
 
   const [lot, setLot] = useState<PublicLot | null>(null);
   const [mandate, setMandate] = useState<BidMandate | null>(null);
   const [headroom, setHeadroom] = useState<Headroom | null>(null);
   const [layer, setLayer] = useState<WebMcpLayer>("L3_no_webmcp");
-  const [probe, setProbe] = useState<string | null>(null);
   const [joined, setJoined] = useState(false);
 
   const [ceiling, setCeiling] = useState("80.00");
   const [notify, setNotify] = useState("65.00");
-  const [note, setNote] = useState("");
   const [budget, setBudget] = useState("150.00");
 
   const loadMandate = useCallback(async () => {
@@ -56,42 +64,26 @@ export function App() {
     setHeadroom(h ?? null);
   }, [bidderId]);
 
-  /**
-   * Bring the floor into the frame tree, then probe.
-   *
-   * Measured in Chrome 151: `getTools({fromOrigins})` only reaches a remote
-   * origin's tools when that origin is loaded in a descendant navigable with
-   * `allow="tools"`. Without this hidden bridge frame the console can never
-   * reach L1, no matter what the browser supports — the tools simply are not
-   * observable from here.
-   *
-   * The frame is mounted first and given a moment to register its tools, since
-   * registration happens after its React tree mounts.
-   */
+  /* Bring the floor into the frame tree, then probe. Without this hidden
+     bridge frame the console cannot reach the floor's tools at all — measured
+     in Chrome 151, getTools only sees origins present as descendants. */
   useEffect(() => {
-    let unmountBridge: (() => void) | undefined;
+    let unmount: (() => void) | undefined;
     let cancelled = false;
-
     void (async () => {
-      unmountBridge = mountToolBridge(FLOOR_ORIGIN);
+      unmount = mountToolBridge(FLOOR_ORIGIN);
       await new Promise((r) => setTimeout(r, 2500));
       if (cancelled) return;
-
       const cap = await detectCapability([FLOOR_ORIGIN]);
       setLayer(cap.layer);
-      setProbe(cap.crossOriginProbe?.detail ?? null);
-      if (cap.crossOriginProbe) {
-        console.info("[OpenFloor] cross-origin probe:", cap.crossOriginProbe.detail);
-      }
+      if (cap.crossOriginProbe) console.info("[OpenFloor]", cap.crossOriginProbe.detail);
     })();
-
     return () => {
       cancelled = true;
-      unmountBridge?.();
+      unmount?.();
     };
   }, []);
 
-  /* Take a seat under this persona's name. */
   useEffect(() => {
     void (async () => {
       await api.join({ bidder_id: bidderId, alias: persona.alias });
@@ -108,7 +100,6 @@ export function App() {
     void (async () => setLot((await api.lot()).lot))();
   }, [state?.lot?.id]);
 
-  /* Register the three PRIVATE mandate tools (no exposedTo — see the hook). */
   const tools = useBidderTools({
     bidderId,
     mandate,
@@ -133,16 +124,15 @@ export function App() {
   async function saveMandate() {
     const c = Math.round(parseFloat(ceiling) * 100);
     const n = Math.round(parseFloat(notify) * 100);
-    if (!Number.isFinite(c) || !Number.isFinite(n)) return;
     const b = Math.round(parseFloat(budget) * 100);
+    if (!Number.isFinite(c) || !Number.isFinite(n)) return;
     await api.setMandate({
       bidder_id: bidderId,
       ceiling_cents: c,
       notify_above_cents: Math.min(n, c),
-      // A budget below the per-bid ceiling would be incoherent; the ceiling is
-      // the floor of what a session can cost if you win anything at all.
+      // A budget below the per-bid ceiling is incoherent: the ceiling is the
+      // least a session can cost if you win anything at all.
       ...(Number.isFinite(b) && b >= c ? { total_budget_cents: b } : {}),
-      strategy_note: note,
       auto_bid_enabled: true,
     });
     await loadMandate();
@@ -160,57 +150,41 @@ export function App() {
     await loadMandate();
   }
 
-  const cap = describeLayer(layer);
   const seconds = state?.seconds_remaining ?? 0;
-  const isOpen = state?.lot?.status === "open" && seconds > 0;
-  const isHigh = state?.high_bidder_id === bidderId;
+  const open = state?.lot?.status === "open" && seconds > 0;
+  const leading = state?.high_bidder_id === bidderId;
 
   return (
     <div className="wrap">
       <header className="masthead">
-        <div>
-          <div className="brand">
-            Bidder Console · <span>{persona.alias}</span>
-          </div>
-          <div className="tagline">{persona.temperament}</div>
+        <div className="brand">
+          OpenFloor <span className="who">· {persona.alias}</span>
         </div>
-        <div className="badges">
-          <span className={`badge ${connected ? "ok" : ""}`}>{connected ? "live" : "reconnecting"}</span>
-          {tools.registered && <span className="badge ok">3 private tools</span>}
-          <span className={`badge ${agentEnabled ? "ok" : "off"}`}>
-            agent {agentEnabled ? "on" : "off"}
-          </span>
+        <div className="masthead-right">
+          {open && (
+            <span className={`live-dot ${connected ? "" : "idle"}`}>
+              {connected ? "Live" : "Reconnecting"}
+            </span>
+          )}
+          <span className="who">{agentEnabled ? "Agent bidding" : "Agent paused"}</span>
         </div>
       </header>
 
-      <div className={`cap ${layer === "L1_cross_origin" ? "l1" : layer === "L2_same_origin" ? "l2" : "l3"}`}>
-        <div className="dot" />
-        <div>
-          <div className="cap-title">{cap.label}</div>
-          <div className="cap-detail">{cap.detail}</div>
-          <div className="cap-detail mono" style={{ fontSize: 11.5, marginTop: 4 }}>
-            watching {FLOOR_ORIGIN} · mandate tools stay private to this origin
-          </div>
-          {probe && (
-            <div className="cap-detail mono" style={{ fontSize: 11, marginTop: 3, opacity: 0.8 }}>
-              {probe}
-            </div>
-          )}
-        </div>
+      <div className="sr" aria-live="polite" aria-atomic="true">
+        {open && state ? `Current bid ${fmt(state.current_price_cents)}, ${seconds} seconds left.` : ""}
       </div>
 
-      {/* ── Confirmation cards: the agent stopping at your line ────────── */}
+      {/* The moment this console exists for. */}
       {confirmations.map((c) => (
-        <div className="confirm" key={c.id}>
-          <h3>{persona.alias} wants your approval</h3>
+        <div className="ask" key={c.id} role="alertdialog" aria-label="Approval needed">
+          <h3>{persona.alias} needs your approval</h3>
           <div className="amt">{fmt(c.amount_cents)}</div>
           <div className="why">
-            {c.rationale || "No reason given."} — the price was {fmt(c.price_at_request_cents)} when
-            it asked. This bid has <strong>not</strong> been placed.
+            {c.rationale || "No reason given."} The price was {fmt(c.price_at_request_cents)} when it
+            asked. Nothing has been bid.
           </div>
-          <div className="controls">
+          <div className="act">
             <button
-              className="approve"
               onClick={async () => {
                 await api.confirm({ confirmation_id: c.id, approved: true });
                 void refresh();
@@ -219,7 +193,7 @@ export function App() {
               Approve {fmt(c.amount_cents)}
             </button>
             <button
-              className="decline"
+              className="quiet"
               onClick={async () => {
                 await api.confirm({ confirmation_id: c.id, approved: false });
                 void refresh();
@@ -231,158 +205,189 @@ export function App() {
         </div>
       ))}
 
-      {/* ── Ceiling raise requests: the agent asking, never taking ─────── */}
       {raiseRequests
         .filter((r) => r.status === "pending")
         .map((r) => (
-          <div className="confirm" key={r.id}>
-            <h3>{persona.alias} is asking to raise your ceiling</h3>
+          <div className="ask" key={r.id} role="alertdialog" aria-label="Limit increase requested">
+            <h3>{persona.alias} is asking to raise your limit</h3>
             <div className="amt">
               {fmt(r.current_ceiling_cents)} → {fmt(r.requested_ceiling_cents)}
             </div>
             <div className="why">{r.justification}</div>
-            <div className="controls">
+            <div className="act">
               <button
-                className="approve"
                 onClick={async () => {
                   await api.resolveCeilingRaise({ request_id: r.id, approved: true });
-                  setRaiseRequests((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: "approved" } : x)));
+                  setRaiseRequests((p) =>
+                    p.map((x) => (x.id === r.id ? { ...x, status: "approved" as const } : x)),
+                  );
                   await loadMandate();
                 }}
               >
                 Raise to {fmt(r.requested_ceiling_cents)}
               </button>
               <button
-                className="decline"
+                className="quiet"
                 onClick={async () => {
                   await api.resolveCeilingRaise({ request_id: r.id, approved: false });
-                  setRaiseRequests((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: "declined" } : x)));
+                  setRaiseRequests((p) =>
+                    p.map((x) => (x.id === r.id ? { ...x, status: "declined" as const } : x)),
+                  );
                 }}
               >
-                Keep it at {fmt(r.current_ceiling_cents)}
+                Keep {fmt(r.current_ceiling_cents)}
               </button>
             </div>
           </div>
         ))}
 
-      <div className="layout">
-        <div>
-          {/* ── The lot ─────────────────────────────────────── */}
-          <div className="panel">
-            <h2>On the block</h2>
-            {!lot ? (
-              <div className="empty">Nothing open yet.</div>
-            ) : (
-              <>
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>{lot.title}</div>
-                <div className="price-row">
-                  <div>
-                    <div className="price-label">Current bid</div>
-                    <div className="price">{fmt(state?.current_price_cents ?? 0)}</div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div className={`clock ${seconds <= 10 && isOpen ? "urgent" : ""}`}>
-                      {isOpen ? `0:${String(seconds).padStart(2, "0")}` : "—"}
-                    </div>
-                    {state?.clock_extended && isOpen && (
-                      <div style={{ color: "var(--amber)", fontSize: 12 }}>extended · anti-snipe</div>
-                    )}
-                  </div>
-                </div>
-                <div className="badges" style={{ marginTop: 12 }}>
-                  {isHigh && <span className="badge ok">you hold the high bid</span>}
-                  {state?.high_bidder_alias && !isHigh && (
-                    <span className="badge">high · {state.high_bidder_alias}</span>
-                  )}
-                  <span className={`badge ${state?.reserve_met ? "ok" : "warn"}`}>
-                    {state?.reserve_met ? "reserve met" : "reserve not met"}
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* ── Mandate ─────────────────────────────────────── */}
-          <div className="panel">
-            <h2>Your mandate</h2>
-            {mandate && headroom ? (
-              <>
-                <MandateBand
-                  currentPriceCents={state?.current_price_cents ?? 0}
-                  notifyAboveCents={mandate.notify_above_cents}
-                  ceilingCents={mandate.ceiling_cents}
-                />
-                <div className="controls" style={{ marginTop: 14 }}>
-                  <button
-                    className={mandate.auto_bid_enabled ? "danger" : "primary"}
-                    onClick={() => void toggleAuto(!mandate.auto_bid_enabled)}
-                  >
-                    {mandate.auto_bid_enabled ? "Stop the agent" : "Let the agent bid"}
-                  </button>
-                </div>
-                {headroom.total_budget_cents !== undefined && (
-                  <div className="hint">
-                    Session budget {fmt(headroom.total_budget_cents)} ·{" "}
-                    <strong>{fmt(headroom.budget_remaining_cents ?? 0)} left</strong> across all lots
-                    ({fmt(headroom.committed_cents ?? 0)} committed).
-                  </div>
-                )}
-                <div className="hint">
-                  The ceiling caps a single bid; the budget caps every lot together. Both are
-                  enforced on the server — {persona.alias} cannot raise either.
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="field-row">
-                  <div className="field">
-                    <label htmlFor="ceil">Hard ceiling</label>
-                    <input id="ceil" type="number" step="0.01" value={ceiling} onChange={(e) => setCeiling(e.target.value)} />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="notif">Ask me above</label>
-                    <input id="notif" type="number" step="0.01" value={notify} onChange={(e) => setNotify(e.target.value)} />
-                  </div>
-                </div>
-                <div className="field">
-                  <label htmlFor="budget">Total across all lots</label>
-                  <input id="budget" type="number" step="0.01" value={budget} onChange={(e) => setBudget(e.target.value)} />
-                </div>
-                <div className="field">
-                  <label htmlFor="note">Guidance (optional)</label>
-                  <input
-                    id="note"
-                    type="text"
-                    value={note}
-                    placeholder="e.g. only if condition is Excellent"
-                    onChange={(e) => setNote(e.target.value)}
-                  />
-                </div>
-                <button className="primary" onClick={() => void saveMandate()}>
-                  Set mandate
-                </button>
-                <div className="hint">
-                  Or just tell your agent: “bid up to $80, but check with me past $65.”
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* ── Agent reasoning ───────────────────────────────── */}
-        <div>
-          <div className="panel">
-            <h2>
-              {persona.alias}'s reasoning{" "}
-              {agent.thinking && <span className="thinking">· thinking</span>}
-            </h2>
-            <AgentLog entries={agent.log} />
-            <div className="hint">
-              Four stages: plan, bid, belief update, replan. Every figure comes from the
-              server — the agent never does the arithmetic itself.
+      {!lot ? (
+        <div className="empty">Nothing on the block. The next lot opens shortly.</div>
+      ) : (
+        <>
+          <div className="eyebrow">On the block</div>
+          <h1 className="lot-title">{lot.title}</h1>
+          <div className="price-block">
+            <div className="price-row">
+              <div className="price">{fmt(state?.current_price_cents ?? 0)}</div>
+              <div className={`clock ${seconds <= 10 && open ? "urgent" : ""}`}>
+                {open ? `0:${String(seconds).padStart(2, "0")}` : "Closed"}
+              </div>
+            </div>
+            <div className="price-sub">
+              {leading ? (
+                <span className="met">You are leading</span>
+              ) : (
+                state?.high_bidder_alias && <span>{state.high_bidder_alias} leads</span>
+              )}
+              <span className={state?.reserve_met ? "met" : ""}>
+                {state?.reserve_met ? "Reserve met" : "Reserve not met"}
+              </span>
             </div>
           </div>
+        </>
+      )}
+
+      <section className="section">
+        <div className="section-head">
+          <h2>Your limits</h2>
+          {mandate && (
+            <button
+              className="quiet small"
+              onClick={() => void toggleAuto(!mandate.auto_bid_enabled)}
+            >
+              {mandate.auto_bid_enabled ? "Pause agent" : "Resume agent"}
+            </button>
+          )}
         </div>
+
+        {mandate && headroom ? (
+          <>
+            <Band
+              price={state?.current_price_cents ?? 0}
+              notify={mandate.notify_above_cents}
+              ceiling={mandate.ceiling_cents}
+            />
+            <div className="facts">
+              <div className="fact">
+                <span className="k">Bids alone below</span>
+                <span className="v">{fmt(mandate.notify_above_cents)}</span>
+              </div>
+              <div className="fact">
+                <span className="k">Asks you above</span>
+                <span className="v sup">{fmt(mandate.notify_above_cents)}</span>
+              </div>
+              <div className="fact">
+                <span className="k">Never passes</span>
+                <span className="v wall">{fmt(mandate.ceiling_cents)}</span>
+              </div>
+              {headroom.total_budget_cents !== undefined && (
+                <div className="fact">
+                  <span className="k">Left, all lots</span>
+                  <span className="v">{fmt(headroom.budget_remaining_cents ?? 0)}</span>
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="act">
+              <label className="field-inline">
+                <span className="k">Never pass</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  aria-label="Hard ceiling"
+                  value={ceiling}
+                  onChange={(e) => setCeiling(e.target.value)}
+                />
+              </label>
+              <label className="field-inline">
+                <span className="k">Ask me above</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  aria-label="Ask above"
+                  value={notify}
+                  onChange={(e) => setNotify(e.target.value)}
+                />
+              </label>
+              <label className="field-inline">
+                <span className="k">Budget, all lots</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  aria-label="Total budget"
+                  value={budget}
+                  onChange={(e) => setBudget(e.target.value)}
+                />
+              </label>
+              <button onClick={() => void saveMandate()}>Set limits</button>
+            </div>
+            <div className="note">
+              Or say it in words to your agent: “bid up to {ceiling}, but check with me past{" "}
+              {notify}.”
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <h2>{persona.alias}'s reasoning</h2>
+          {agent.thinking && <span className="aside">thinking…</span>}
+        </div>
+        <AgentLog entries={agent.log} />
+      </section>
+
+      <footer className="foot">
+        <span>Bids are simulated. No payment is taken and no goods change hands.</span>
+        <span>
+          {tools.registered ? "Agent tools registered" : "Agent tools unavailable"}
+          {layer === "L1_cross_origin" ? " · reaching the floor" : ""}
+        </span>
+      </footer>
+    </div>
+  );
+}
+
+/** The mandate, drawn: free below, supervised between, impossible past. */
+function Band({ price, notify, ceiling }: { price: number; notify: number; ceiling: number }) {
+  const max = Math.max(ceiling * 1.1, price * 1.05, 1);
+  const pct = (v: number) => Math.min(100, Math.max(0, (v / max) * 100));
+  return (
+    <div className="band">
+      <div className="band-track">
+        <div className="band-auto" style={{ width: `${pct(notify)}%` }} />
+        <div
+          className="band-sup"
+          style={{ left: `${pct(notify)}%`, width: `${Math.max(0, pct(ceiling) - pct(notify))}%` }}
+        />
+        <div className="band-mark" style={{ left: `${pct(price)}%` }} />
+      </div>
+      <div className="band-legend">
+        <span>{fmt(0)}</span>
+        <span>{fmt(ceiling)}</span>
       </div>
     </div>
   );

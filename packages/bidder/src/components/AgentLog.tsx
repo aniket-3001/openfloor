@@ -14,22 +14,22 @@ const STAGE_LABEL: Record<AgentLogEntry["stage"], string> = {
  * that the agent formed a plan, decided against it, took the server's corrected
  * figures, and revised — instead of a black box that emits bids.
  */
-export function AgentLog({ entries }: { entries: AgentLogEntry[] }) {
+export function AgentLog({ entries, limit = 10 }: { entries: AgentLogEntry[]; limit?: number }) {
   if (!entries.length) {
     return <div className="empty">Waiting for a lot to open.</div>;
   }
 
+  // Bounded by count rather than a scrollbox: the page is the scroll surface.
+  const shown = [...entries].reverse().slice(0, limit);
+
   return (
     <div className="log">
-      {[...entries].reverse().map((e) => (
+      {shown.map((e) => (
         <div className="log-row" key={e.id}>
           <div className="log-head">
             <span className={`stage ${e.stage}`}>{STAGE_LABEL[e.stage]}</span>
-            <span className="mono" style={{ fontSize: 11, color: "var(--ink-faint)" }}>
-              {new Date(e.at).toLocaleTimeString()}
-            </span>
+            <span className="log-text">{e.text}</span>
           </div>
-          <div className="log-text">{e.text}</div>
           {e.outcome && <div className="log-outcome">{e.outcome}</div>}
         </div>
       ))}
