@@ -100,9 +100,14 @@ jobs:
           # failure: three heavy concurrent npm installs exhausted memory on the
           # default builder and npm died with "Exit handler never called".
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/openfloor/app:${GITHUB_SHA}"
+          # The registry is one-time infrastructure, created out of band. The
+          # deploy identity holds artifactregistry.writer and deliberately NOT
+          # admin: CI needs to push images, not to create or delete registries.
           if ! gcloud artifacts repositories describe openfloor --location="$REGION" >/dev/null 2>&1; then
-            gcloud artifacts repositories create openfloor \
-              --repository-format=docker --location="$REGION" --quiet
+            echo "Missing Artifact Registry repo 'openfloor' in $REGION. Create it once:"
+            echo "  gcloud artifacts repositories create openfloor \\
+                 --repository-format=docker --location=$REGION"
+            exit 1
           fi
           gcloud builds submit --tag "$IMAGE" --machine-type=e2-highcpu-8 --timeout=1200s --quiet
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
