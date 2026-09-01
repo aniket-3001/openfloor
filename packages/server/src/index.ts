@@ -192,8 +192,21 @@ async function serveStatic(pathname: string, res: ServerResponse): Promise<void>
   }
 
   try {
-    const body = await readFile(file);
+    const raw = await readFile(file);
+    let body: Buffer | string = raw;
     const type = MIME[extname(file).toLowerCase()] ?? "application/octet-stream";
+
+    // Chrome origin-trial token, injected at serve time rather than baked into
+    // the HTML. Without a token a visitor must enable chrome://flags by hand;
+    // with one, WebMCP simply works on this origin. Registration is a manual
+    // step on Google's side, so this stays configuration rather than a constant.
+    const trialToken = process.env.ORIGIN_TRIAL_TOKEN;
+    if (trialToken && type.startsWith("text/html")) {
+      body = Buffer.from(raw)
+        .toString("utf8")
+        .replace("</head>", `  <meta http-equiv="origin-trial" content="${trialToken}" />
+  </head>`);
+    }
     const immutable = /\/assets\//.test(file);
     res.writeHead(200, {
       "Content-Type": type,
