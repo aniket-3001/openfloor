@@ -54,10 +54,18 @@ jobs:
             sleep 1
           done
 
+      # The suites drive many bidders, so they authenticate as a programmatic
+      # actor. Without the token every call is an anonymous session and all the
+      # bidders collapse into one identity — which is precisely what the session
+      # change is meant to enforce, and what failed this step when it was missing.
       - name: Integration suite
+        env:
+          OPENFLOOR_INTERNAL_TOKEN: ci-secret
         run: OPENFLOOR_API=http://127.0.0.1:8080/api OPENFLOOR_PACE=10 npm run test:integration
 
       - name: Concurrency suite
+        env:
+          OPENFLOOR_INTERNAL_TOKEN: ci-secret
         run: OPENFLOOR_API=http://127.0.0.1:8080/api npm run test:concurrency
 
   deploy:
