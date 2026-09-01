@@ -1,0 +1,10 @@
+# Copy to `.dev.vars` for local development. `.dev.vars` is gitignored.
+
+# Required. HMAC key used to sign bid mandates. Any non-empty string works
+# locally; use a strong random value in production via:
+#   wrangler secret put MANDATE_SECRET
+MANDATE_SECRET=local-development-secret-change-me
+
+# Optional. Without it, bidder agents fall back to their deterministic policy
+# and the auction still runs — it simply runs without model-driven bidding.
+# ANTHROPIC_API_KEY=sk-ant-...
