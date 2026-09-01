@@ -21,7 +21,7 @@ function url(path: string, params: Record<string, string | number> = {}): string
 }
 
 async function get<T>(path: string, params?: Record<string, string | number>): Promise<T> {
-  const res = await fetch(url(path, params), { credentials: "omit" });
+  const res = await fetch(url(path, params), { credentials: "include" });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
   return (await res.json()) as T;
 }
@@ -31,7 +31,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    credentials: "omit",
+    credentials: "include",
   });
   return (await res.json().catch(() => ({}))) as T;
 }

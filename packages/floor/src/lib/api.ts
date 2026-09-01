@@ -26,7 +26,7 @@ function url(path: string, params: Record<string, string | number> = {}): string
 }
 
 async function get<T>(path: string, params?: Record<string, string | number>): Promise<T> {
-  const res = await fetch(url(path, params), { credentials: "omit" });
+  const res = await fetch(url(path, params), { credentials: "include" });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
   return (await res.json()) as T;
 }
@@ -36,7 +36,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    credentials: "omit",
+    credentials: "include",
   });
   // A non-2xx still carries a structured body for bid outcomes — parse it
   // rather than throwing, so an agent gets the real reason instead of "500".
@@ -74,6 +74,15 @@ export const api = {
       }[];
     }>("/history", { limit }),
   audit: () => get<{ entries: AuditEntry[] }>("/audit"),
+
+  myActivity: () =>
+    get<{
+      alias: string | null;
+      bids: { lot_id: string; amount_cents: number; placed_by: string; human_confirmed: boolean; rationale: string | null; at: string }[];
+      events: { at: string; action: string; detail: string; flagged: string | null }[];
+      committed_cents: number;
+      mandate: { ceiling_cents: number; notify_above_cents: number; total_budget_cents: number | null; auto_bid_enabled: boolean } | null;
+    }>("/my-activity"),
 
   join: (body: { bidder_id: string; alias: string }) =>
     post<{ alias: string; flagged: boolean }>("/join", body),

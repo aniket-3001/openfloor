@@ -3,7 +3,7 @@
  *  THE WebMCP INTEGRATION — auction house tools
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * This file registers OpenFloor's six auction tools directly against the raw
+ * This file registers OpenFloor's seven auction tools directly against the raw
  * WebMCP API, `document.modelContext.registerTool(...)`, with no wrapper
  * library in between. The bidder consoles use the `useWebMCP` React hook
  * instead (see packages/bidder/src/webmcp/useBidderTools.ts); both paths are
@@ -40,6 +40,7 @@ import {
   GET_BID_HISTORY,
   GET_LOT_DETAILS,
   CHECK_BID,
+  GET_MY_ACTIVITY,
   PLACE_BID,
   WITHDRAW_FROM_LOT,
   FLOOR_TOOLS,
@@ -91,7 +92,7 @@ export interface RegisterOptions {
 }
 
 /**
- * Register all six auction tools. Returns a disposer that aborts them.
+ * Register all seven auction tools. Returns a disposer that aborts them.
  */
 export async function registerAuctionTools(opts: RegisterOptions): Promise<() => void> {
   // Fail loudly at startup if a tool overruns Chrome's character budgets —
@@ -206,7 +207,53 @@ export async function registerAuctionTools(opts: RegisterOptions): Promise<() =>
     registerOptions,
   );
 
-  /* ── 5. place_bid — MUTATING, mandate-gated ───────────────────────────── */
+  /* ── 5. get_my_activity — read-only, the human asking the agent ───────── */
+  await modelContext.registerTool(
+    toTool(GET_MY_ACTIVITY, async () => {
+      const a = await api.myActivity();
+      const lines: string[] = [];
+
+      if (a.mandate) {
+        lines.push(
+          `Your limits: ceiling ${fmt(a.mandate.ceiling_cents)}, ` +
+            `approval needed above ${fmt(a.mandate.notify_above_cents)}` +
+            (a.mandate.total_budget_cents !== null
+              ? `, session budget ${fmt(a.mandate.total_budget_cents)}`
+              : "") +
+            `. Auto-bidding is ${a.mandate.auto_bid_enabled ? "on" : "OFF"}.`,
+        );
+        lines.push(`Committed so far: ${fmt(a.committed_cents)}`);
+      } else {
+        lines.push("No mandate set yet, so nothing has been bid on your behalf.");
+      }
+
+      if (!a.bids.length) {
+        lines.push("", "No bids placed yet this session.");
+      } else {
+        lines.push("", "Bids placed for you, oldest first:");
+        for (const b of a.bids) {
+          lines.push(
+            `  ${fmt(b.amount_cents)} on ${b.lot_id} (${b.placed_by}` +
+              `${b.human_confirmed && b.placed_by === "agent" ? ", you approved it" : ""})` +
+              (b.rationale ? ` — ${untrustedEnvelope(b.rationale)}` : ""),
+          );
+        }
+      }
+
+      const notable = a.events.filter((e) =>
+        /ceiling|budget|confirmation|withdrew|raise/i.test(e.action),
+      );
+      if (notable.length) {
+        lines.push("", "Notable moments:");
+        for (const e of notable.slice(-8)) lines.push(`  ${e.action}: ${e.detail}`);
+      }
+
+      return reply(lines.join(String.fromCharCode(10)));
+    }),
+    registerOptions,
+  );
+
+  /* ── 6. place_bid — MUTATING, mandate-gated ───────────────────────────── */
   await modelContext.registerTool(
     toTool(
       PLACE_BID,
@@ -257,7 +304,7 @@ export async function registerAuctionTools(opts: RegisterOptions): Promise<() =>
     registerOptions,
   );
 
-  /* ── 6. withdraw_from_lot — MUTATING ──────────────────────────────────── */
+  /* ── 7. withdraw_from_lot — MUTATING ──────────────────────────────────── */
   await modelContext.registerTool(
     toTool(WITHDRAW_FROM_LOT, async ({ lot_id, reason }: { lot_id: string; reason?: string }) => {
       await api.withdraw({ bidder_id: opts.bidderId, lot_id, reason });

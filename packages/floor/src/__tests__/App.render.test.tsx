@@ -143,12 +143,13 @@ describe("floor detects WebMCP when present", () => {
 
     render(<App />);
     await waitFor(() => expect(screen.getByText(/Same-origin WebMCP/i)).toBeTruthy());
-    // Six auction tools plus three private mandate tools.
-    await waitFor(() => expect(registerTool.mock.calls.length).toBe(9));
+    // Seven auction tools plus three private mandate tools.
+    await waitFor(() => expect(registerTool.mock.calls.length).toBe(10));
 
     const names = registerTool.mock.calls.map((c) => (c[0] as { name: string }).name);
     expect(names).toContain("place_bid");
     expect(names).toContain("check_bid");
+    expect(names).toContain("get_my_activity");
     expect(names).toContain("set_bid_mandate");
 
     // The auction tools are published to bidder origins; the mandate tools are
