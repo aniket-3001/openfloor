@@ -31,6 +31,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { AuctionEngine, type RoomHost } from "@openfloor/engine";
 import type { ServerEvent } from "@openfloor/shared";
 import { startRivals } from "./rivals.js";
+import { startContinuousAuction } from "./continuous.js";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const MANDATE_SECRET = process.env.MANDATE_SECRET ?? "";
@@ -371,6 +372,15 @@ server.listen(PORT, () => {
       apiBase: `http://127.0.0.1:${PORT}`,
       tickMs: Number(process.env.OPENFLOOR_RIVAL_TICK_MS ?? 2500),
       ceilingCents: Number(process.env.OPENFLOOR_RIVAL_CEILING_CENTS ?? 25000),
+    });
+  }
+
+  // Opt-in so the live-behaviour suite, which asserts a lot closes and STAYS
+  // closed, is unaffected.
+  if (ROLE === "api" && process.env.OPENFLOOR_CONTINUOUS === "true") {
+    startContinuousAuction({
+      apiBase: `http://127.0.0.1:${PORT}`,
+      room: process.env.PUBLIC_ROOM ?? "main",
     });
   }
   console.log(
