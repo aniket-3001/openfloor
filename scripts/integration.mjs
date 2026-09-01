@@ -11,6 +11,15 @@
  */
 
 const BASE = process.env.OPENFLOOR_API ?? "http://127.0.0.1:8123/api";
+/**
+ * These suites drive many bidders at once, so they authenticate as a
+ * programmatic actor rather than as a browser session. Without this the server
+ * would mint one anonymous session per call and every bidder would collapse
+ * into the same identity.
+ */
+const INTERNAL = process.env.OPENFLOOR_INTERNAL_TOKEN ?? process.env.MANDATE_SECRET ?? "";
+const H = INTERNAL ? { "x-openfloor-internal": INTERNAL } : {};
+
 const ROOM = `it-${Date.now()}`;
 
 let passed = 0;
@@ -62,14 +71,14 @@ async function readJson(res, path) {
 
 const get = async (p, q) => {
   await pace();
-  return readJson(await fetch(url(p, q)), `GET ${p}`);
+  return readJson(await fetch(url(p, q), { headers: H }), `GET ${p}`);
 };
 const post = async (p, body) => {
   await pace();
   return readJson(
     await fetch(url(p), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...H },
       body: JSON.stringify(body ?? {}),
     }),
     `POST ${p}`,

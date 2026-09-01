@@ -31,6 +31,12 @@ import {
   type Persona,
 } from "@openfloor/shared";
 
+/** Programmatic actors present a credential rather than relying on anonymity. */
+function internalHeaders(): Record<string, string> {
+  const t = process.env.OPENFLOOR_INTERNAL_TOKEN || process.env.MANDATE_SECRET || "";
+  return t ? { "x-openfloor-internal": t } : {};
+}
+
 export interface RivalOptions {
   /** Persona ids to run, e.g. ["ada", "rex", "nia"]. */
   personas: string[];
@@ -82,13 +88,13 @@ export function startRivals(opts: RivalOptions): () => void {
   const post = async (path: string, body: unknown) => {
     const res = await fetch(url(path), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...internalHeaders() },
       body: JSON.stringify(body),
     });
     return res.json() as Promise<Record<string, unknown>>;
   };
   const get = async (path: string, params?: Record<string, string | number>) =>
-    (await fetch(url(path, params))).json() as Promise<Record<string, any>>;
+    (await fetch(url(path, params), { headers: internalHeaders() })).json() as Promise<Record<string, any>>;
 
   let stopped = false;
 

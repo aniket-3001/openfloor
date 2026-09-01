@@ -17,6 +17,12 @@
 
 const PAUSE_AFTER_CLOSE_MS = 8000;
 
+/** Programmatic actors present a credential rather than relying on anonymity. */
+function internalHeaders(): Record<string, string> {
+  const t = process.env.OPENFLOOR_INTERNAL_TOKEN || process.env.MANDATE_SECRET || "";
+  return t ? { "x-openfloor-internal": t } : {};
+}
+
 export function startContinuousAuction(opts: {
   apiBase: string;
   room: string;
@@ -34,13 +40,13 @@ export function startContinuousAuction(opts: {
   const post = (path: string) =>
     fetch(url(path), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...internalHeaders() },
       body: "{}",
     });
 
   async function tick(): Promise<void> {
     if (stopped) return;
-    const res = await fetch(url("/state"));
+    const res = await fetch(url("/state"), { headers: internalHeaders() });
     const { state } = (await res.json()) as { state: any };
 
     // Nothing has ever been opened in this room — start the first lot.

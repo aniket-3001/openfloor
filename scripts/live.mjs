@@ -13,6 +13,15 @@
  */
 
 const BASE = process.env.OPENFLOOR_API ?? "http://127.0.0.1:8123/api";
+/**
+ * These suites drive many bidders at once, so they authenticate as a
+ * programmatic actor rather than as a browser session. Without this the server
+ * would mint one anonymous session per call and every bidder would collapse
+ * into the same identity.
+ */
+const INTERNAL = process.env.OPENFLOOR_INTERNAL_TOKEN ?? process.env.MANDATE_SECRET ?? "";
+const H = INTERNAL ? { "x-openfloor-internal": INTERNAL } : {};
+
 const ROOM = `live-${Date.now()}`;
 
 let passed = 0;
@@ -39,13 +48,13 @@ const url = (p, q = {}) => {
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const get = async (p, q) => {
   await wait(120);
-  return (await fetch(url(p, q))).json();
+  return (await fetch(url(p, q), { headers: H })).json();
 };
 const post = async (p, body) => {
   await wait(120);
   const r = await fetch(url(p), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...H },
     body: JSON.stringify(body ?? {}),
   });
   return r.json();
@@ -86,7 +95,7 @@ async function main() {
   section("LLM proxy");
   const llm = await fetch(new URL("/api/llm", BASE).toString(), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...H },
     body: JSON.stringify({ system: "x", messages: [{ role: "user", content: "hi" }] }),
   });
   const llmBody = await llm.json().catch(() => ({}));

@@ -17,6 +17,15 @@
  */
 
 const BASE = process.env.OPENFLOOR_API ?? "http://127.0.0.1:8140/api";
+/**
+ * These suites drive many bidders at once, so they authenticate as a
+ * programmatic actor rather than as a browser session. Without this the server
+ * would mint one anonymous session per call and every bidder would collapse
+ * into the same identity.
+ */
+const INTERNAL = process.env.OPENFLOOR_INTERNAL_TOKEN ?? process.env.MANDATE_SECRET ?? "";
+const H = INTERNAL ? { "x-openfloor-internal": INTERNAL } : {};
+
 const ROOM = `conc-${Date.now()}`;
 
 let passed = 0;
@@ -37,12 +46,12 @@ const url = (p, q = {}) => {
   for (const [k, v] of Object.entries(q)) u.searchParams.set(k, String(v));
   return u.toString();
 };
-const get = async (p, q) => (await fetch(url(p, q))).json();
+const get = async (p, q) => (await fetch(url(p, q), { headers: H })).json();
 const post = async (p, body) =>
   (
     await fetch(url(p), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...H },
       body: JSON.stringify(body ?? {}),
     })
   ).json();

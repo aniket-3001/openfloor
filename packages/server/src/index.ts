@@ -29,6 +29,18 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import { AuctionEngine, type RoomHost } from "@openfloor/engine";
+import {
+  SESSION_COOKIE,
+  bidderIdForHandle,
+  newSession,
+  normalizeHandle,
+  openSession,
+  passphraseVerifier,
+  readCookie,
+  sealSession,
+  sessionCookie,
+  type Session,
+} from "@openfloor/shared";
 import type { ServerEvent } from "@openfloor/shared";
 import { startRivals } from "./rivals.js";
 import { startContinuousAuction } from "./continuous.js";
@@ -62,6 +74,17 @@ interface Room {
 }
 
 const rooms = new Map<string, Room>();
+
+/**
+ * Claimed seats: handle -> passphrase verifier.
+ *
+ * In memory, like room state. This is a demo: a durable user table would mean
+ * a real datastore and real account-recovery obligations, neither of which the
+ * project is trying to demonstrate. A seat survives a browser restart via its
+ * cookie; claiming one lets you return to the same identity from elsewhere
+ * until the process recycles.
+ */
+const claimedSeats = new Map<string, string>();
 
 function getRoom(name: string): Room {
   const existing = rooms.get(name);
@@ -127,6 +150,9 @@ function corsHeaders(origin: string | undefined): Record<string, string> {
     "Access-Control-Allow-Origin": ok ? origin : (ALLOWED_ORIGINS[0] ?? "*"),
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
+    // The bidder console is a different origin; without this the session cookie
+    // never reaches the API and every caller would look anonymous.
+    "Access-Control-Allow-Credentials": "true",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
@@ -239,11 +265,42 @@ async function handleLlm(bodyText: string): Promise<{ status: number; body: unkn
 
 /* ── Server ───────────────────────────────────────────────────── */
 
+/** Cookies must be Secure to be SameSite=None; local http dev cannot be. */
+const SECURE_COOKIES = process.env.OPENFLOOR_SECURE_COOKIES !== "false";
+
+/**
+ * Credential for PROGRAMMATIC actors — the rival driver, the auction runner,
+ * and the test suites — which act on behalf of several bidders and therefore
+ * cannot be a single browser session.
+ *
+ * This is a credential, not a loophole: without it a caller is anonymous and
+ * gets a session-derived identity like anyone else. It is deliberately not a
+ * "trust the body if no cookie" rule, which would hand the forgery back to
+ * anybody who simply declined to send one.
+ */
+const INTERNAL_TOKEN = process.env.OPENFLOOR_INTERNAL_TOKEN || MANDATE_SECRET;
+const INTERNAL_HEADER = "x-openfloor-internal";
+
 const server = createServer((req, res) => {
   void (async () => {
     const origin = req.headers.origin;
     const cors = corsHeaders(origin);
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+    // Resolve the caller's session, minting one on first contact so there is no
+    // signup wall — you open the page and you are already seated.
+    const internal =
+      !!INTERNAL_TOKEN && req.headers[INTERNAL_HEADER] === INTERNAL_TOKEN;
+
+    let session = await openSession(readCookie(req.headers.cookie, SESSION_COOKIE), MANDATE_SECRET);
+    let setCookie: string | null = null;
+    // Programmatic actors manage their own identities and are not issued one.
+    if (!session && !internal && ROLE === "api") {
+      session = newSession();
+      setCookie = sessionCookie(await sealSession(session, MANDATE_SECRET), { secure: SECURE_COOKIES });
+    }
+    const withSession = (h: Record<string, string>) =>
+      setCookie ? { ...h, "Set-Cookie": setCookie } : h;
 
     if (req.method === "OPTIONS") {
       res.writeHead(204, cors);
@@ -292,6 +349,45 @@ const server = createServer((req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/session") {
+      if (req.method === "POST") {
+        // Claim a seat: bind this session to a handle so it can be resumed
+        // elsewhere. First claim wins the handle; later ones must match.
+        const b = JSON.parse((await readBody(req)) || "{}") as { handle?: string; passphrase?: string };
+        const handle = normalizeHandle(b.handle ?? "");
+        if (!handle || !b.passphrase || b.passphrase.length < 6) {
+          res.writeHead(400, withSession({ "Content-Type": "application/json", ...cors }));
+          res.end(JSON.stringify({ error: "Handle must be 3-24 chars [a-z0-9_-]; passphrase at least 6." }));
+          return;
+        }
+        const verifier = await passphraseVerifier(handle, b.passphrase, MANDATE_SECRET);
+        const existing = claimedSeats.get(handle);
+        if (existing && existing !== verifier) {
+          res.writeHead(403, withSession({ "Content-Type": "application/json", ...cors }));
+          res.end(JSON.stringify({ error: "That handle is taken and the passphrase does not match." }));
+          return;
+        }
+        claimedSeats.set(handle, verifier);
+        const claimed: Session = {
+          ...(session as Session),
+          handle,
+          alias: (session as Session).alias === "Guest" ? handle : (session as Session).alias,
+          bidder_id: await bidderIdForHandle(handle, MANDATE_SECRET),
+        };
+        const cookie = sessionCookie(await sealSession(claimed, MANDATE_SECRET), { secure: SECURE_COOKIES });
+        res.writeHead(200, { "Content-Type": "application/json", "Set-Cookie": cookie, ...cors });
+        res.end(JSON.stringify({ session: { bidder_id: claimed.bidder_id, alias: claimed.alias, handle } }));
+        return;
+      }
+      res.writeHead(200, withSession({ "Content-Type": "application/json", ...cors }));
+      res.end(JSON.stringify({
+        session: session
+          ? { bidder_id: session.bidder_id, alias: session.alias, handle: session.handle ?? null }
+          : null,
+      }));
+      return;
+    }
+
     if (url.pathname.startsWith("/api/")) {
       const room = getRoom(url.searchParams.get("room") ?? "main");
       const bodyText = req.method === "GET" || req.method === "HEAD" ? undefined : await readBody(req);
@@ -304,9 +400,11 @@ const server = createServer((req, res) => {
         body: bodyText && bodyText.length ? bodyText : undefined,
       });
 
-      const out = await room.engine.handle(request);
+      // Internal callers assert their own bidder_id; everyone else gets theirs
+      // from the session and cannot override it.
+      const out = await room.engine.handle(request, internal ? undefined : session?.bidder_id);
       const text = await out.text();
-      res.writeHead(out.status, { "Content-Type": "application/json", ...cors });
+      res.writeHead(out.status, withSession({ "Content-Type": "application/json", ...cors }));
       res.end(text);
       return;
     }
