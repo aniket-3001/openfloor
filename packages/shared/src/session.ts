@@ -82,6 +82,10 @@ export async function sealSession(session: Session, secret: string): Promise<str
  */
 export async function openSession(token: string | undefined, secret: string): Promise<Session | null> {
   if (!token) return null;
+  // A role without a signing key cannot have sessions. Returning null is right;
+  // importKey on an empty secret THROWS, which made every request on the
+  // static-serving roles 500 and failed Cloud Run's startup probe.
+  if (!secret) return null;
   const dot = token.lastIndexOf(".");
   if (dot <= 0) return null;
 
