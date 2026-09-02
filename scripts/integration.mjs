@@ -357,11 +357,49 @@ async function main() {
   check("mandates survive across requests", mAlice.mandate?.bidder_id === "alice");
   check("headroom is computed server-side", typeof mAlice.headroom?.headroom_to_ceiling_cents === "number");
 
+  /* ── Recycle vs reset ─────────────────────────────────────── */
+  // The continuous driver loops the catalogue forever. It used to do that with
+  // a full reset, which also cleared every mandate — so each time the demo
+  // wrapped, every seated bidder was silently de-authorized and the floor went
+  // to zero bids with nothing in the log to say why. Recycle must rewind the
+  // sale without evicting the room; reset must still evict.
+  section("Recycle vs reset");
+  // A bidder of its own: the rate-limit section above deliberately exhausts
+  // alice's budget, which would mask the thing this section is checking.
+  await post("/join", { bidder_id: "wren", alias: "Wren" });
+  await post("/mandate", {
+    bidder_id: "wren",
+    ceiling_cents: 20000,
+    notify_above_cents: 20000,
+    auto_bid_enabled: true,
+  });
+  await post("/recycle");
+  const rec = await get("/state");
+  check("recycle rewinds to the first lot", rec.state.lot.id === "lot-leica" && rec.state.bid_count === 0);
+  const mAfterRecycle = await get("/mandate", { bidder_id: "wren" });
+  check("recycle keeps mandates", mAfterRecycle.mandate?.bidder_id === "wren");
+
+  await post("/start");
+  const bidAfterRecycle = await post("/bid", {
+    bidder_id: "wren",
+    lot_id: "lot-leica",
+    amount_cents: 3100,
+    placed_by: "agent",
+    rationale: "still seated after a recycle",
+  });
+  check(
+    "a seated bidder can still bid after a recycle",
+    bidAfterRecycle.status === "accepted",
+    bidAfterRecycle.status,
+  );
+
   /* ── Reset ────────────────────────────────────────────────── */
   section("Reset");
   await post("/reset");
   const sr = await get("/state");
   check("reset restores the opening state", sr.state.lot.id === "lot-leica" && sr.state.bid_count === 0);
+  const mAfterReset = await get("/mandate", { bidder_id: "wren" });
+  check("reset clears mandates", !mAfterReset.mandate);
 
   /* ── Summary ──────────────────────────────────────────────── */
   console.log(`\n${"─".repeat(52)}`);
