@@ -122,7 +122,20 @@ describe("enforceMandate — validity gates", () => {
 
   it("rejects bidding against yourself", () => {
     const r = enforceMandate(baseInput({ is_high_bidder: true }));
-    expect(r.status).toBe("rejected_not_authorized");
+    expect(r.status).toBe("rejected_self_bid");
+  });
+
+  it("does not report the high bidder as unauthorized", () => {
+    // These once shared a status. An agent reading "not authorized" concludes
+    // its mandate is gone and tries to re-establish one — but holding the high
+    // bid is the opposite situation, and conflating them makes a
+    // well-behaved agent thrash.
+    const winning = enforceMandate(baseInput({ is_high_bidder: true }));
+    const notAllowed = enforceMandate(
+      baseInput({ mandate: makeMandate({ auto_bid_enabled: false }) }),
+    );
+    expect(notAllowed.status).toBe("rejected_not_authorized");
+    expect(winning.status).not.toBe(notAllowed.status);
   });
 
   it("rejects a closed lot", () => {
