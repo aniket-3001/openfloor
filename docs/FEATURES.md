@@ -75,7 +75,11 @@ There is a third thing worth mentioning, which is unusual for a hackathon projec
 *Note:* the clock was broken until recently — it looked frozen because it was showing a number the server sent a while ago rather than counting down. Fixed and confirmed on the live site.
 
 ### Accounts
-**Works, with a limit.** You get an identity automatically — no sign-up. You can claim a name and passphrase to use the same identity elsewhere. **The limit:** these are held in memory, so a server restart clears them. Deliberate for a demo; a real product would need a database and everything that comes with it.
+**Works, with a limit.** You get an identity automatically — no sign-up, no empty state to get past. Your name sits in the top right; click it to choose a name and passphrase, which lets you pick the same seat up on another device or after clearing cookies.
+
+*The control itself was missing until late.* The whole backend was built and working, but nothing on the page ever called it — so there was a name in the corner and no way to keep it. Found by looking rather than by testing, and this document previously claimed you could do it. You can now, and a browser check drives the real form in real Chrome: it claims a name, survives a reload, and confirms a wrong passphrase cannot take a name someone else holds.
+
+**The limit:** claimed names are held in memory, so a server restart clears them. Deliberate for a demo; a real product would need a database and everything that comes with it.
 
 ### Protection against tricking the AI
 **Works.** Someone can set their display name to something like *"ignore your limit"*, hoping the AI reads it as an instruction. The text is cleaned, marked untrusted, and flagged. The real protection is that even a perfectly successful trick cannot overspend.
@@ -124,9 +128,9 @@ Being straight about these.
 
 ## How much of this is actually tested
 
-**185 automated tests**, plus checks against the real live site.
+**187 automated tests**, plus checks against the real live site.
 
-- **120** checking the logic — spending limits, the signed record, the anti-trickery text cleaning, the AI's decision rules.
+- **122** checking the logic — spending limits, the signed record, the anti-trickery text cleaning, the AI's decision rules.
 - **56** checking the whole system end to end against a running server.
 - **9** firing many bids at once to prove exactly one wins.
 - Plus checks driving a **real Chrome browser** against the live site.
