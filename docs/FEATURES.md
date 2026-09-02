@@ -28,11 +28,12 @@ That last point is the second half of the highlight. **The AI cannot raise its o
 
 Together that is a claim very few entries can make: *a real trust boundary between websites, and a spending limit an AI cannot cross even when it wants to.*
 
-There is a third thing worth mentioning, which is unusual for a hackathon project. **We found three places where Chrome behaves differently from what the written standard says**, and wrote them down:
+There is a third thing worth mentioning, which is unusual for a hackathon project. **We found four places where Chrome behaves differently from what the written standard says**, and wrote them down:
 
 1. Sending arguments to a tool requires text, not an object — the docs imply otherwise.
 2. Tools inside a page's own frame are only visible if that page is embedded properly. Without knowing this, the cross-website feature simply does not work, and nothing tells you why.
 3. The function for discovering tools always returns your own tools too — so "it returned something" does not prove anything crossed. **We got this wrong ourselves at first**, and our own check falsely reported success until it was fixed.
+4. That same function returns a *promise*, not a list. Reading the count straight off it gives `undefined`, which reads as "no tools registered" when in fact ten are.
 
 ---
 
@@ -98,9 +99,19 @@ There is a third thing worth mentioning, which is unusual for a hackathon projec
 ## Not done
 
 ### Chrome origin-trial token
-**Not done — needs you.**
+**Done.**
 
-Right now a visitor must turn on a setting in Chrome by hand before the AI features work. A token from Google removes that step entirely. The code is ready and reads it from configuration; **registering it is a form on Google's site that only a person with the account can fill in.** This is the single highest-value thing left, because it removes friction on the exact path a judge takes.
+A visitor used to have to switch on a hidden Chrome setting by hand before any of the AI features worked. Not any more. Both sites are registered in Google's WebMCP origin trial, and the tokens are served with the pages.
+
+Checked the only way that actually settles it — a **clean Chrome with no flags whatsoever**, which is what a judge has:
+
+- Floor: WebMCP available, **10 tools** registered.
+- Bidder console: WebMCP available, **3 tools** registered.
+- Chrome 151, inside the trial's 149–156 window. The trial runs to **17 November 2026**, well past judging.
+
+Serving the token is not the same as the token working — it can be served and still refused for the wrong origin, wrong feature, or a lapsed date — so this is measured in the browser rather than inferred from the page source.
+
+*A fourth Chrome-vs-documentation difference turned up here:* `getTools()` returns a **promise**, not an array. Our first check read `.length` off the promise, got `undefined`, and reported the page had registered no tools when it had registered ten.
 
 ### Tested in the ChatGPT app's browser
 **Not done.**

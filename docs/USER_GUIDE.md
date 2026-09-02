@@ -144,11 +144,11 @@ Your assistant can *ask* you to raise your maximum. It explains why. You say yes
 
 ## Using it with an AI assistant
 
-The manual auction works in any browser. To let an assistant bid for you, you need one of:
+The manual auction works in any browser. To let an assistant bid for you, you need **Chrome 149 or newer** — and nothing else. No setting to change, no restart.
 
-**Chrome, version 149 or newer.** Type `chrome://flags/#enable-webmcp-testing` in the address bar, set it to Enabled, and restart Chrome.
+That is because both sites are registered in Google's WebMCP origin trial, so the feature is switched on for these addresses automatically. It stays that way until 17 November 2026.
 
-**Or the ChatGPT desktop app's built-in browser**, which supports this already.
+The ChatGPT desktop app's built-in browser also supports this.
 
 Then open the floor and tell your assistant something like:
 
