@@ -191,9 +191,40 @@ describe("decideWithModel — the model advises, the policy binds", () => {
 describe("replan", () => {
   it("does not reset appetite upward after a lot closes", () => {
     const first = plan(obs(), ada);
-    const tight = { ...first, walk_away_cents: 2000 };
-    const next = replan(tight, obs(), ada);
-    expect(next.walk_away_cents).toBeLessThanOrEqual(Math.round(2000 * 1.1));
+    const next = replan(first, obs(), ada);
+    expect(next.appetite).toBeLessThan(first.appetite);
+    expect(next.walk_away_cents).toBeLessThan(first.walk_away_cents);
+  });
+
+  it("never lets appetite fall away entirely, however long the sale runs", () => {
+    let p = plan(obs(), ada);
+    for (let i = 0; i < 40; i++) p = replan(p, obs(), ada);
+    expect(p.appetite).toBeGreaterThan(0.5);
+    expect(p.walk_away_cents).toBeGreaterThan(0);
+  });
+
+  it("still bids on a lot worth more than the ones before it", () => {
+    // Regression. Fatigue used to be carried as a cap in cents, so after a
+    // $90 lot the agent was pinned near $92 — and the $280 watch, which opens
+    // at $120, could never be bid on by anyone. It passed on every single
+    // pass of the catalogue while the floor showed a live clock and no bids.
+    const cheap = { estimate_low_cents: 6000, estimate_high_cents: 9000 };
+    const dear = {
+      estimate_low_cents: 20000,
+      estimate_high_cents: 28000,
+      current_price_cents: 12000,
+      min_increment_cents: 500,
+      ceiling_cents: 25000,
+      notify_above_cents: 25000,
+    };
+
+    let p = plan(obs(cheap), ada);
+    p = replan(p, obs(cheap), ada);
+    p = replan(p, obs(dear), ada);
+
+    expect(p.walk_away_cents).toBeGreaterThan(12000);
+    const d = decide(obs(dear), p, ada);
+    expect(d.action).toBe("bid");
   });
 });
 
