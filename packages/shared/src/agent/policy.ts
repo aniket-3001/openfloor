@@ -31,6 +31,11 @@ export interface AgentPlan {
   walk_away_cents: number;
   priority: 1 | 2 | 3;
   strategy: string;
+  /**
+   * How much of this lot's own value the agent is still willing to chase,
+   * 0-1. Decays as the sale wears on. See `replan`.
+   */
+  appetite: number;
 }
 
 /** Authoritative state handed to the agent. Every number here comes from the server. */
@@ -77,6 +82,7 @@ export function plan(obs: AgentObservation, persona: Persona): AgentPlan {
   return {
     fair_value_cents: fair,
     walk_away_cents: walkAway,
+    appetite: 1,
     priority,
     strategy:
       `Treat ${fmt(fair)} as fair value for a ${obs.lot_condition.toLowerCase()} example. ` +
@@ -243,13 +249,26 @@ export async function decideWithModel(
 
 /* ────────────────────────── Stage 4: Replan ────────────────────────── */
 
+/** Each further lot is chased slightly less hard, down to a floor. */
+const FATIGUE_PER_LOT = 0.9;
+const MIN_APPETITE = 0.6;
+
 export function replan(prev: AgentPlan, obs: AgentObservation, persona: Persona): AgentPlan {
   const next = plan(obs, persona);
-  // Carry forward a lowered walk-away: a bidder who just overpaid should not
-  // reset to full appetite on the following lot.
+
+  // Fatigue is a FRACTION OF THIS LOT'S OWN VALUE, not a cap carried over in
+  // cents. Carrying the previous lot's figure across ratchets the agent to
+  // whatever the cheapest lot was worth: after a $90 lot, a $280 lot was
+  // capped near $92 while opening at $120, so no agent could ever bid on it
+  // and it passed every single time. Scaling by value keeps the intent — a
+  // bidder deep into a sale does not reset to full appetite — without making
+  // a more valuable lot structurally unbiddable.
+  const appetite = Math.max(MIN_APPETITE, prev.appetite * FATIGUE_PER_LOT);
+
   return {
     ...next,
-    walk_away_cents: Math.min(next.walk_away_cents, Math.round(prev.walk_away_cents * 1.1)),
+    appetite,
+    walk_away_cents: Math.round(next.walk_away_cents * appetite),
     strategy: next.strategy,
   };
 }
