@@ -223,6 +223,11 @@ describe("replan", () => {
     p = replan(p, obs(dear), ada);
 
     expect(p.walk_away_cents).toBeGreaterThan(12000);
+
+    // decide() skips rounds at random so the rivals do not bid like a
+    // metronome. That pacing is not what this test is about, and leaving it
+    // live made the test fail roughly one run in three.
+    vi.spyOn(Math, "random").mockReturnValue(1);
     const d = decide(obs(dear), p, ada);
     expect(d.action).toBe("bid");
   });
