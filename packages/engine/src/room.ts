@@ -812,6 +812,7 @@ export class AuctionEngine {
           if (payload.notify_above_cents > payload.ceiling_cents) {
             return this.json({ error: "notify_above_cents must be at or below ceiling_cents" }, 400);
           }
+          const note = sanitizeRationale(payload.strategy_note ?? "");
           const unsigned = {
             mandate_id: crypto.randomUUID(),
             bidder_id: payload.bidder_id,
@@ -822,7 +823,11 @@ export class AuctionEngine {
               ? { total_budget_cents: Math.trunc(payload.total_budget_cents) }
               : {}),
             auto_bid_enabled: payload.auto_bid_enabled ?? true,
-            strategy_note: (payload.strategy_note ?? "").slice(0, 200),
+            // Sanitized like every other free-text field. This one was only
+            // truncated, which made it the single untrusted string reaching an
+            // agent's context unfiltered — and it is signed into the mandate,
+            // so it travels with every decision that agent makes.
+            strategy_note: note.value,
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
             created_at: new Date().toISOString(),
           };
@@ -841,7 +846,9 @@ export class AuctionEngine {
               `Ceiling ${fmt(mandate.ceiling_cents)}, confirm above ${fmt(mandate.notify_above_cents)}` +
               (mandate.total_budget_cents !== undefined
                 ? `, total budget ${fmt(mandate.total_budget_cents)}.`
-                : "."),
+                : ".") +
+              (note.flagged ? " Guidance tripped injection filters. Neutralized and flagged." : ""),
+            flagged: note.flagged ? "injection_attempt" : undefined,
           });
           await this.persist();
           return this.json({ mandate });
