@@ -12,6 +12,11 @@
  */
 
 :root {
+  /* One height for inputs and buttons. They are sized from different type
+     scales — 16px mono against 14.5px sans — so a row of them came out a
+     pixel out of true. */
+  --control-h: 46px;
+
   --bg: #fbfbfd;
   --surface: #ffffff;
   --ink: #1d1d1f;
@@ -259,6 +264,7 @@ body {
 input[type="text"], input[type="number"] {
   font: inherit;
   font-family: var(--num);
+  min-height: var(--control-h);
   padding: 11px 14px;
   border-radius: 10px;
   border: 1px solid var(--hair);
@@ -273,6 +279,10 @@ button {
   font: inherit;
   font-weight: 500;
   font-size: 14.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-h);
   padding: 11px 20px;
   border-radius: 10px;
   border: 1px solid transparent;
@@ -286,7 +296,7 @@ button:active:not(:disabled) { transform: scale(0.985); }
 button:disabled { opacity: 0.32; cursor: not-allowed; }
 button.quiet { background: transparent; color: var(--ink); border-color: var(--hair); }
 button.quiet:hover:not(:disabled) { border-color: var(--ink-3); opacity: 1; }
-button.small { padding: 8px 14px; font-size: 13.5px; }
+button.small { padding: 8px 14px; font-size: 13.5px; min-height: 0; }
 
 .note { font-size: 13px; color: var(--ink-3); margin-top: 12px; }
 
