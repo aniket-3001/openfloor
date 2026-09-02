@@ -32,6 +32,23 @@ async function getRoot<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * Session endpoints sit outside the room, so they take no `room` parameter.
+ * The reply carries a Set-Cookie, hence `credentials: "include"` — without it
+ * the browser drops the cookie and the claim appears to succeed but does not
+ * stick.
+ */
+async function postRoot<T>(path: string, body: unknown): Promise<T> {
+  const u = new URL(`${BASE}/api${path}`, BASE || window.location.origin);
+  const res = await fetch(u.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    credentials: "include",
+  });
+  return (await res.json()) as T;
+}
+
 async function get<T>(path: string, params?: Record<string, string | number>): Promise<T> {
   const res = await fetch(url(path, params), { credentials: "include" });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
@@ -85,6 +102,16 @@ export const api = {
   /** Who am I? Issued automatically on first contact, so this never 401s. */
   session: () =>
     getRoot<{ session: { bidder_id: string; alias: string; handle: string | null } | null }>("/session"),
+
+  /**
+   * Bind this seat to a handle so it can be resumed on another device.
+   * First claim wins the handle; later ones must present the same passphrase.
+   */
+  claimSeat: (handle: string, passphrase: string) =>
+    postRoot<{
+      session?: { bidder_id: string; alias: string; handle: string };
+      error?: string;
+    }>("/session", { handle, passphrase }),
 
   myActivity: () =>
     get<{
