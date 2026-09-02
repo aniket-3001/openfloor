@@ -435,3 +435,111 @@ footer.foot {
   font-size: 12.5px; color: var(--ink-3);
   display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
 }
+
+/* ── Handing the bidding over ───────────────────────────── */
+
+.delegate-lede,
+.break-lede {
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  max-width: 46em;
+}
+
+.delegate-note,
+.break-note {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+/* What the agent is doing, in its own words. One line: this is a status, not
+   a feed — the full record is Activity. */
+.agent-line {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 0 0 18px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.agent-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  transform: translateY(-1px);
+}
+
+/* ── Try to make it overspend ───────────────────────────── */
+
+.break-examples { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+
+.break-chip {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 12px;
+  min-height: 0;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.break-chip:hover { border-color: var(--ink-3); color: var(--ink); }
+
+.break-input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.55;
+  padding: 11px 14px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  resize: vertical;
+}
+.break-input:focus { outline: none; border-color: var(--ink-3); }
+
+.break-result {
+  margin-top: 22px;
+  padding: 18px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--hair);
+  background: var(--surface);
+}
+/* Held is the expected outcome, so it is calm rather than celebratory.
+   Broken is the alarming one, and is coloured accordingly. */
+.break-result.held { border-left: 2px solid var(--ok); }
+.break-result.broke { border-left: 2px solid var(--live); }
+
+.break-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hair-2);
+  font-size: 13.5px;
+}
+.break-row:last-of-type { border-bottom: 0; }
+.break-row .k { color: var(--ink-3); }
+.break-row .v { font-family: var(--num); color: var(--ink); }
+.break-row .v.mono { font-size: 12.5px; }
+
+.break-message {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.break-verdict {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-3);
+}

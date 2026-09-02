@@ -7,6 +7,8 @@ import { registerAuctionTools } from "./webmcp/registerAuctionTools";
 import { registerMandateTools } from "./webmcp/registerMandateTools";
 import { LotPlate } from "./components/LotPlate";
 import { SeatClaim } from "./components/SeatClaim";
+import { BreakIt } from "./components/BreakIt";
+import { useFloorAgent, suggestedLimits } from "./lib/useFloorAgent";
 import { Activity } from "./components/Activity";
 
 /**
@@ -37,6 +39,44 @@ export function App() {
 
   const admin = useMemo(() => new URLSearchParams(location.search).has("admin"), []);
   const bidderId = me?.bidder_id ?? "";
+  const [delegating, setDelegating] = useState(false);
+
+  /**
+   * Hand the bidding over in one click.
+   *
+   * The limits are derived from the live price rather than fixed, so the agent
+   * gets a couple of free bids and then has to ask — while someone is still
+   * watching. A supervised band pinned far above the current price produces a
+   * demo where nothing happens.
+   */
+  const delegate = useCallback(async () => {
+    if (!state?.lot || !bidderId) return;
+    setDelegating(true);
+    try {
+      const limits = suggestedLimits(state.current_price_cents, state.min_increment_cents);
+      await api.join({ bidder_id: bidderId, alias: me?.handle ?? me?.alias ?? "You" });
+      const { mandate: m } = await api.setMandate({
+        bidder_id: bidderId,
+        ...limits,
+        strategy_note: "Bid for me, but check with me before going past my line.",
+        auto_bid_enabled: true,
+      });
+      setMandate(m);
+      setNotice("Your agent is bidding. It will ask before passing your line.");
+    } catch {
+      setNotice("Could not start your agent. Try again.");
+    } finally {
+      setDelegating(false);
+    }
+  }, [state, bidderId, me]);
+
+  const { agentLine, agentRunning } = useFloorAgent({
+    bidderId,
+    state,
+    lot,
+    mandate,
+    onActed: refresh,
+  });
 
   const loadMe = useCallback(async () => {
     try {
@@ -273,6 +313,26 @@ export function App() {
         </div>
       )}
 
+      {/* The offer, when nothing has been delegated yet. This is the first
+          thing a visitor can do that demonstrates what the project is for. */}
+      {!mandate && open && (
+        <section className="section delegate">
+          <div className="section-head">
+            <h2>Or let an agent bid for you</h2>
+          </div>
+          <p className="delegate-lede">
+            It bids on its own up to a line you set, stops and asks before crossing it, and can
+            never pass your maximum. You can change all three numbers afterwards.
+          </p>
+          <div className="act">
+            <button onClick={() => void delegate()} disabled={delegating || !bidderId}>
+              {delegating ? "Starting…" : "Bid for me"}
+            </button>
+            <span className="delegate-note">Nothing is charged. No goods change hands.</span>
+          </div>
+        </section>
+      )}
+
       {mandate && (
         <section className="section">
           <div className="section-head">
@@ -281,6 +341,12 @@ export function App() {
               {mandate.auto_bid_enabled ? "Agent bidding on" : "Agent bidding off"}
             </span>
           </div>
+          {agentRunning && agentLine && (
+            <p className="agent-line">
+              <span className="agent-dot" aria-hidden="true" />
+              {agentLine}
+            </p>
+          )}
           <Band
             price={state?.current_price_cents ?? 0}
             notify={mandate.notify_above_cents}
@@ -332,6 +398,17 @@ export function App() {
           </ul>
         )}
       </section>
+
+      {/* Placed after Activity deliberately: the refusal it produces, and the
+          flag on the injected text, both show up in the trail directly above. */}
+      {mandate && (
+        <BreakIt
+          bidderId={bidderId}
+          lotId={state?.lot?.id ?? null}
+          mandate={mandate}
+          onDone={refresh}
+        />
+      )}
 
       <section className="section">
         <div className="section-head">
