@@ -53,7 +53,12 @@ export function App() {
     if (!state?.lot || !bidderId) return;
     setDelegating(true);
     try {
-      const limits = suggestedLimits(state.current_price_cents, state.min_increment_cents);
+      const limits = suggestedLimits(
+        state.current_price_cents,
+        state.min_increment_cents,
+        lot?.estimate_low_cents,
+        lot?.estimate_high_cents,
+      );
       await api.join({ bidder_id: bidderId, alias: me?.handle ?? me?.alias ?? "You" });
       const { mandate: m } = await api.setMandate({
         bidder_id: bidderId,
@@ -68,7 +73,7 @@ export function App() {
     } finally {
       setDelegating(false);
     }
-  }, [state, bidderId, me]);
+  }, [state, lot, bidderId, me]);
 
   const { agentLine, agentRunning } = useFloorAgent({
     bidderId,

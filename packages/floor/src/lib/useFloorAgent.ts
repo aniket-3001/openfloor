@@ -31,6 +31,7 @@ export function useFloorAgent(params: {
   const lotIdRef = useRef<string | null>(null);
   const lastActedAt = useRef(0);
   const busy = useRef(false);
+  const askedRaiseFor = useRef<string | null>(null);
 
   // A calm persona: it bids the minimum and stops without drama, which reads
   // as deliberate next to Rex's jumps rather than as another bot in the pile.
@@ -103,11 +104,38 @@ export function useFloorAgent(params: {
         }
         onActed();
       } else if (decision.action === "out") {
-        setLastLine(decision.rationale);
+        // Priced out. If the wall it hit is the human's ceiling rather than its
+        // own judgement, quitting silently is the wrong move: a new lot opens
+        // above the ceiling that was set against the previous one, and the
+        // agent would simply go dead with nothing on screen to say why. It
+        // cannot lift its own ceiling — so it asks.
+        const next = state.current_price_cents + state.min_increment_cents;
+        if (next > mandate.ceiling_cents && askedRaiseFor.current !== state.lot.id) {
+          askedRaiseFor.current = state.lot.id;
+          const wanted = state.current_price_cents + state.min_increment_cents * 10;
+          await api.requestCeilingRaise({
+            bidder_id: bidderId,
+            requested_ceiling_cents: wanted,
+            justification: `${lot.title} opened above the limit you set on the last lot.`,
+          });
+          setLastLine(`Asked you to raise the limit to ${fmt(wanted)} — it cannot do that itself.`);
+          onActed();
+        } else {
+          setLastLine(decision.rationale);
+        }
       } else if (decision.action === "hold") {
         setLastLine(decision.rationale);
       } else if (decision.action === "request_raise") {
-        setLastLine(`Wants a higher limit: ${decision.rationale}`);
+        if (askedRaiseFor.current !== state.lot.id) {
+          askedRaiseFor.current = state.lot.id;
+          await api.requestCeilingRaise({
+            bidder_id: bidderId,
+            requested_ceiling_cents: decision.requested_ceiling_cents,
+            justification: decision.rationale,
+          });
+          onActed();
+        }
+        setLastLine(`Asked you to raise the limit — it cannot do that itself.`);
       }
     } catch {
       /* transient; the next tick retries */
@@ -129,20 +157,30 @@ export function useFloorAgent(params: {
 }
 
 /**
- * Limits calibrated so the ask actually happens while someone is watching.
+ * Sensible opening limits, anchored to the lot rather than to the moment.
  *
- * A demo whose supervised band sits far above the current price is a demo
- * where the agent bids quietly and nothing interesting occurs. These are
- * relative to the live price: a couple of free bids, then a question.
+ * Anchoring to the current price ("+30 increments") produced two bad outcomes:
+ * on a quiet lot the agent won below its line and never had cause to ask, and
+ * when the sale moved on, the next lot opened above a ceiling set against the
+ * previous one. The estimate is the natural anchor a person would use anyway —
+ * bid freely up to what the lot is reckoned to be worth, ask above that — so
+ * the line means something, and it means the same thing on every lot.
  */
-export function suggestedLimits(currentCents: number, incrementCents: number) {
+export function suggestedLimits(
+  currentCents: number,
+  incrementCents: number,
+  estimateLowCents?: number,
+  estimateHighCents?: number,
+) {
   const inc = Math.max(incrementCents, 50);
-  // Wide enough that the rivals cannot run the price past the ceiling before
-  // the supervised band is ever reached — which turns the ask into a request
-  // for a higher limit and loses the moment entirely.
-  const ceiling = currentCents + inc * 30;
+  const low = estimateLowCents ?? currentCents + inc * 4;
+  const high = estimateHighCents ?? currentCents + inc * 20;
+
+  // Never below the current price, or the agent is priced out before it starts.
+  const notify = Math.max(low, currentCents + inc);
+  const ceiling = Math.max(Math.round(high * 1.5), notify + inc * 6);
   return {
-    notify_above_cents: currentCents + inc * 2,
+    notify_above_cents: notify,
     ceiling_cents: ceiling,
     total_budget_cents: ceiling * 3,
   };

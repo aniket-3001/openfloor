@@ -109,11 +109,19 @@ async function main() {
     let asked = false, line = null;
     for (let i = 0; i < 22 && !asked; i++) {
       await wait(3000);
-      const r = await cdp.eval(`(() => ({
-        card: !!document.querySelector('.confirm, [class*="confirm"]'),
-        text: document.body.innerText.includes('wants to bid') || document.body.innerText.includes('Approve'),
-        line: document.querySelector('.agent-line')?.textContent?.trim() ?? null,
-      }))()`);
+      // Either form of asking counts. A confirmation card is the common case;
+      // when a new lot opens above the ceiling set against the previous one,
+      // the agent asks to raise the limit instead. Both are the agent stopping
+      // and deferring to its human, which is the claim under test.
+      const r = await cdp.eval(`(() => {
+        const t = document.body.innerText;
+        return {
+          card: !!document.querySelector('.ask'),
+          text: t.includes('wants to bid') || t.includes('Approve')
+             || t.includes('asking to raise your limit'),
+          line: document.querySelector('.agent-line')?.textContent?.trim() ?? null,
+        };
+      })()`);
       line = r?.line ?? line;
       asked = !!(r?.card || r?.text);
     }
