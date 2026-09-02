@@ -76,7 +76,10 @@ export function startContinuousAuction(opts: {
     // `/next` is a no-op on the final lot, so the catalogue has run out and the
     // room needs recycling to keep the demo alive.
     if (after?.lot?.status !== "open") {
-      await post("/reset");
+      // `/recycle`, not `/reset`: rewinding the catalogue must not evict the
+      // people in the room. A full reset clears every mandate, which silently
+      // de-authorized every seated bidder each time the demo looped.
+      await post("/recycle");
       await post("/start");
       console.log("[auction] catalogue exhausted — recycled");
     } else {
