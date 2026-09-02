@@ -93,6 +93,15 @@ export type BidStatus =
   | "rejected_closed"
   | "rejected_mandate_expired"
   | "rejected_not_authorized"
+  /**
+   * You already hold the high bid.
+   *
+   * Distinct from `rejected_not_authorized` on purpose: an agent that reads
+   * "not authorized" reasonably concludes its mandate is gone and tries to
+   * re-establish one. Being the high bidder is the opposite situation — it is
+   * winning — and conflating the two makes a well-behaved agent thrash.
+   */
+  | "rejected_self_bid"
   | "rejected_rate_limited"
   | "indeterminate";
 

@@ -178,7 +178,7 @@ export function enforceMandate(input: EnforcementInput): EnforcementOutcome {
 
   if (is_high_bidder) {
     return {
-      status: "rejected_not_authorized",
+      status: "rejected_self_bid",
       message: "You already hold the high bid. Bidding against yourself is not allowed.",
     };
   }

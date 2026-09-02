@@ -578,7 +578,7 @@ export class AuctionEngine {
     // where both paths meet.
     if (this.highBidderId === body.bidder_id) {
       return {
-        status: "rejected_not_authorized",
+        status: "rejected_self_bid",
         message: "You already hold the high bid. Bidding against yourself is not allowed.",
         ...base,
       };
