@@ -9,8 +9,12 @@
       content="A WebMCP-native auction house. Your agent bids, you set the limits, everything is on the record."
     />
     <!--
-      WebMCP origin trial token goes here when deploying to a registered origin:
-      <meta http-equiv="origin-trial" content="TOKEN" />
+      The WebMCP origin-trial token is injected here at serve time from the
+      ORIGIN_TRIAL_TOKEN environment variable, so it is never baked into the
+      bundle — a token is tied to one exact origin, and the same bundle is
+      served from several. Writing the example tag out in full here meant
+      View Source showed a meta tag reading content="TOKEN", which looks like
+      a broken token to anyone inspecting the page.
       For local development use chrome://flags/#enable-webmcp-testing instead.
     -->
   </head>
