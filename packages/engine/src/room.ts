@@ -168,6 +168,26 @@ export class AuctionEngine {
   }
 
   private reset(): void {
+    this.rewindCatalogue();
+    this.mandates.clear();
+    this.aliases.clear();
+  }
+
+  /**
+   * Rewind the sale to the first lot, keeping who is in the room.
+   *
+   * The continuous driver loops the catalogue forever so the demo is never
+   * dead. It used to do that with a full `reset()`, which also cleared every
+   * mandate and alias — so the moment the catalogue wrapped, every seated
+   * bidder was silently de-authorized. Their next bid came back
+   * `rejected_not_authorized` and the room went quiet for good.
+   *
+   * A mandate is a standing instruction from a human, not sale state. Ending a
+   * sale is no reason to throw it away, and doing so silently is worse: a
+   * person who set limits and walked away would simply stop bidding with
+   * nothing on screen to say why.
+   */
+  private rewindCatalogue(): void {
     this.lots = SEED_LOTS.map((l) => ({ ...l }));
     this.lotIndex = 0;
     this.currentPriceCents = this.lots[0].starting_price_cents;
@@ -179,8 +199,6 @@ export class AuctionEngine {
     this.bids = [];
     this.audit = [];
     this.auditSeq = 0;
-    this.mandates.clear();
-    this.aliases.clear();
     this.confirmations.clear();
     this.ceilingRequests.clear();
     this.withdrawn.clear();
@@ -681,8 +699,10 @@ export class AuctionEngine {
     // Resolve anything the human left hanging before serving this request.
     this.sweepExpiredConfirmations();
 
+    const route = `${request.method} ${path}`;
+
     try {
-      switch (`${request.method} ${path}`) {
+      switch (route) {
         case "GET /state":
           return this.json({ state: this.snapshot() });
 
@@ -1015,8 +1035,13 @@ export class AuctionEngine {
           return this.json({ state: this.snapshot() });
         }
 
+        // Recycle keeps participants seated; reset evicts them. The
+        // continuous driver wants the former, an operator starting over
+        // wants the latter.
+        case "POST /recycle":
         case "POST /reset": {
-          this.reset();
+          if (route === "POST /recycle") this.rewindCatalogue();
+          else this.reset();
           // Cancel the closing alarm too. Without this a reset room keeps a
           // pending alarm that fires against state it no longer describes.
           await this.host.deleteAlarm();
