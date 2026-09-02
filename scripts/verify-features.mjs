@@ -135,6 +135,33 @@ async function main() {
     (await get("/state")).state.current_price_cents === base + 1600,
     String((await get("/state")).state.current_price_cents));
 
+  /* ── "silence is never taken as yes" ── */
+  // The one claim nothing else covered. It costs 65 seconds, so it is opt-in:
+  // set VERIFY_SLOW=1 to include it.
+  if (process.env.VERIFY_SLOW === "1") {
+    await post("/bid", { bidder_id: "kit", lot_id: "lot-leica", amount_cents: base + 1700, placed_by: "human" });
+    const ignored = await post("/bid", {
+      bidder_id: "cy", lot_id: "lot-leica", amount_cents: base + 2500,
+      placed_by: "agent", rationale: "nobody will answer this",
+    });
+    const priceBefore = (await get("/state")).state.current_price_cents;
+    check("an ignored request starts out pending", ignored.status === "awaiting_confirmation", ignored.status);
+
+    console.log("        (waiting 65s for the request to lapse…)");
+    await wait(65000);
+    await get("/state"); // any request triggers the sweep
+
+    const answerLate = await post("/confirm", { confirmation_id: ignored.pending_confirmation_id, approved: true });
+    check("a lapsed request can no longer be approved", !!answerLate.error, JSON.stringify(answerLate).slice(0, 60));
+    check("and silence never placed the bid",
+      (await get("/state")).state.current_price_cents === priceBefore);
+    const lapseAudit = await get("/audit");
+    check("the lapse is recorded as declined",
+      (lapseAudit.entries ?? []).some((e) => e.action === "confirmation_expired"));
+  } else {
+    console.log("  [2mSKIP  the 60s confirmation lapse (set VERIFY_SLOW=1)[0m");
+  }
+
   /* ══ "The AI cannot raise its own limit" ═════════════════ */
   section('"The AI cannot raise its own limit" — it can only ask');
 
@@ -250,23 +277,37 @@ async function main() {
   /* ══ Observed on the live room ═══════════════════════════ */
   section('"Three AI rivals" and "the auction never stops" — observed live');
 
+  // Poll rather than sample twice. Quiet stretches are correct behaviour, not a
+  // stall: agents stop once the price passes their walk-away, and they pace
+  // themselves deliberately so the room does not read as a metronome. A fixed
+  // short window lands in one of those gaps often enough to be useless.
   const obs1 = (await get("/state", LIVE_ROOM)).state;
-  await wait(14000);
-  const obs2 = (await get("/state", LIVE_ROOM)).state;
-
-  const movedOn = obs1.lot.id !== obs2.lot.id;
-  const priceMoved = obs2.current_price_cents > obs1.current_price_cents;
-  const bidsGrew = obs2.bid_count > obs1.bid_count;
-  check("the live room is bidding on its own",
-    priceMoved || bidsGrew || movedOn,
+  let obs2 = obs1;
+  let moved = false;
+  for (let i = 0; i < 15 && !moved; i++) {
+    await wait(4000);
+    obs2 = (await get("/state", LIVE_ROOM)).state;
+    moved = obs2.lot.id !== obs1.lot.id
+      || obs2.current_price_cents > obs1.current_price_cents
+      || obs2.bid_count > obs1.bid_count
+      || obs2.round > obs1.round;
+  }
+  check("the live room is bidding on its own", moved,
     `${obs1.lot.id} $${(obs1.current_price_cents / 100).toFixed(2)} (${obs1.bid_count}) -> ${obs2.lot.id} $${(obs2.current_price_cents / 100).toFixed(2)} (${obs2.bid_count})`);
   check("a rival is named as the high bidder",
     ["Ada", "Rex", "Nia"].includes(obs2.high_bidder_alias ?? obs1.high_bidder_alias ?? ""),
     String(obs2.high_bidder_alias ?? obs1.high_bidder_alias));
 
-  const liveHist = await get("/history", LIVE_ROOM, { limit: 10 });
+  // A lot that has just opened has no bids yet, so wait for one rather than
+  // reading an empty list and calling it a failure.
+  let liveHist = await get("/history", LIVE_ROOM, { limit: 10 });
+  for (let i = 0; i < 15 && !(liveHist.bids ?? []).length; i++) {
+    await wait(4000);
+    liveHist = await get("/history", LIVE_ROOM, { limit: 10 });
+  }
   check("rivals bid through the ordinary agent route, with no special status",
-    (liveHist.bids ?? []).some((b) => b.placed_by === "agent"));
+    (liveHist.bids ?? []).some((b) => b.placed_by === "agent"),
+    `${(liveHist.bids ?? []).length} bids seen`);
   check("no rival bid is exempt from the confirmation marking",
     (liveHist.bids ?? []).every((b) => typeof b.human_confirmed === "boolean"));
 
