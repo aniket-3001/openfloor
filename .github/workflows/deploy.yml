@@ -165,7 +165,7 @@ jobs:
             --quiet \
             --max-instances=2 \
             --memory=512Mi \
-            --set-env-vars="^@^OPENFLOOR_ROLE=floor@STATIC_DIR=static/floor@PUBLIC_API_BASE=$API@PUBLIC_BIDDER_ORIGINS=$BIDDER@PUBLIC_ROOM=main"
+            --set-env-vars="^@^OPENFLOOR_ROLE=floor@STATIC_DIR=static/floor@PUBLIC_API_BASE=$API@PUBLIC_BIDDER_ORIGINS=$BIDDER@PUBLIC_ROOM=main@ORIGIN_TRIAL_TOKEN=${{ secrets.ORIGIN_TRIAL_TOKEN_FLOOR }}"
 
       - name: Deploy bidder console
         run: |
@@ -176,7 +176,7 @@ jobs:
             --quiet \
             --max-instances=2 \
             --memory=512Mi \
-            --set-env-vars="^@^OPENFLOOR_ROLE=bidder@STATIC_DIR=static/bidder@PUBLIC_API_BASE=$API@PUBLIC_FLOOR_ORIGIN=$FLOOR@PUBLIC_ROOM=main@PUBLIC_PERSONA=you"
+            --set-env-vars="^@^OPENFLOOR_ROLE=bidder@STATIC_DIR=static/bidder@PUBLIC_API_BASE=$API@PUBLIC_FLOOR_ORIGIN=$FLOOR@PUBLIC_ROOM=main@PUBLIC_PERSONA=you@ORIGIN_TRIAL_TOKEN=${{ secrets.ORIGIN_TRIAL_TOKEN_BIDDER }}"
 
       - name: Smoke-test the deployment
         run: |
