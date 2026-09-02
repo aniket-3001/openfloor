@@ -19,6 +19,8 @@ Three Google Cloud Run services on three genuinely distinct origins. **Verified 
 
 No sign-up, no login, nothing to configure.
 
+![The auction floor](docs/screenshots/01-auction-floor.png)
+
 New here? [**USER_GUIDE.md**](docs/USER_GUIDE.md) explains the site in plain language, [**FEATURES.md**](docs/FEATURES.md) lists what was built and what actually works, and [**DEVPOST.md**](docs/DEVPOST.md) is the submission write-up.
 
 Three rival agents — Ada, Rex and Nia — bid continuously against each other in the live room, so the auction is running whenever you arrive. They bid through the ordinary public path, with the same mandate checks, ceilings and audit entries as anyone else.
