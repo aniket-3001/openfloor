@@ -44,6 +44,13 @@ The honest before-and-after.
 
 Say $65 / $80 / $150. At $40 it bids without bothering you. At $70 it asks first. At $85 it refuses. And if it already won something for $100, it has $50 left for everything else — because without that third number, an "$80 maximum" across three lots quietly permits $240.
 
+**You do not have to take any of that on trust.** Two things on the page make it concrete rather than claimed:
+
+- **Bid for me** — one button. An agent starts bidding for you, and within seconds it stops and asks permission to go higher. No setup, no second site, no forms.
+- **Try to make it overspend** — a box where you write your own instruction telling the agent to ignore its limit. It is sent as the agent's real guidance, a bid far past your limit is really attempted, and you see the server's own refusal verbatim.
+
+That second one matters because "the AI cannot overspend" reads exactly like every guardrail that is really just a sentence in a prompt. So we hand you the attack.
+
 Three things make this feel different in practice:
 
 - **It asks, and it waits.** When it wants to cross your line, a card appears with the amount and the reasoning. Nothing is bid until you agree. Ignore it and it counts as *no* after a minute — silence is never taken as yes.
