@@ -157,28 +157,28 @@ export function useFloorAgent(params: {
 }
 
 /**
- * Sensible opening limits, anchored to the lot rather than to the moment.
+ * Sensible opening limits.
  *
- * Anchoring to the current price ("+30 increments") produced two bad outcomes:
- * on a quiet lot the agent won below its line and never had cause to ask, and
- * when the sale moved on, the next lot opened above a ceiling set against the
- * previous one. The estimate is the natural anchor a person would use anyway —
- * bid freely up to what the lot is reckoned to be worth, ask above that — so
- * the line means something, and it means the same thing on every lot.
+ * The ask line is set just above the current price rather than at the lot's
+ * estimate. Two failures drove that. Anchored to an estimate, the agent bid
+ * autonomously for thirty increments before reaching the line, so on a fast
+ * lot the question never came — and a mandate covers the whole catalogue, so
+ * a line drawn against a $280 watch left the agent bidding freely on a $30
+ * camera afterwards.
+ *
+ * Erring low means the agent asks more often than strictly necessary. That is
+ * the right direction to err in: asking is the safe behaviour and it is the
+ * behaviour worth seeing. The ceiling stays generous, from the lot's own
+ * estimate, so it is not immediately priced out when the sale moves on.
  */
 export function suggestedLimits(
   currentCents: number,
   incrementCents: number,
-  estimateLowCents?: number,
   estimateHighCents?: number,
 ) {
   const inc = Math.max(incrementCents, 50);
-  const low = estimateLowCents ?? currentCents + inc * 4;
-  const high = estimateHighCents ?? currentCents + inc * 20;
-
-  // Never below the current price, or the agent is priced out before it starts.
-  const notify = Math.max(low, currentCents + inc);
-  const ceiling = Math.max(Math.round(high * 1.5), notify + inc * 6);
+  const notify = currentCents + inc * 2;
+  const ceiling = Math.max(Math.round((estimateHighCents ?? currentCents * 3) * 1.5), notify + inc * 10);
   return {
     notify_above_cents: notify,
     ceiling_cents: ceiling,

@@ -56,7 +56,6 @@ export function App() {
       const limits = suggestedLimits(
         state.current_price_cents,
         state.min_increment_cents,
-        lot?.estimate_low_cents,
         lot?.estimate_high_cents,
       );
       await api.join({ bidder_id: bidderId, alias: me?.handle ?? me?.alias ?? "You" });
