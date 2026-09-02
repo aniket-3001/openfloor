@@ -71,7 +71,13 @@ jobs:
   deploy:
     name: Deploy to Cloud Run
     needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Manual runs deploy too. Configuration can change without the code
+    # changing — rotating the origin-trial token needs a deploy and has no
+    # commit to attach to — and a dispatch that quietly skips this job still
+    # reports success, which reads as a deploy that happened.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     # Serialize deploys: three services share one image and reference each
     # other's origins, so overlapping runs could leave them mismatched.
