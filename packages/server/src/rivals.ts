@@ -56,6 +56,8 @@ interface RivalState {
   joined: boolean;
   lastActedAt: number;
   lastActedPrice: number;
+  /** Last round seen; a decrease means the sale restarted beneath us. */
+  lastRound: number;
 }
 
 export function startRivals(opts: RivalOptions): () => void {
@@ -74,6 +76,7 @@ export function startRivals(opts: RivalOptions): () => void {
       joined: false,
       lastActedAt: 0,
       lastActedPrice: -1,
+      lastRound: 0,
     }));
 
   if (!rivals.length) return () => {};
@@ -128,6 +131,12 @@ export function startRivals(opts: RivalOptions): () => void {
     for (const r of rivals) {
       if (stopped) return;
       try {
+        // A round counter that goes backwards means the catalogue was rewound.
+        // Catching it here re-seats before the first rejected bid rather than
+        // after it.
+        if (state.round < r.lastRound) r.joined = false;
+        r.lastRound = state.round;
+
         await ensureSeated(r);
 
         // Plan once per lot; replan carries reduced appetite into the next one.
@@ -162,6 +171,14 @@ export function startRivals(opts: RivalOptions): () => void {
           });
           if (out.status === "accepted") {
             console.log(`[rival] ${r.persona.alias} bid ${fmt(decision.amount_cents)}`);
+          } else if (out.status === "rejected_not_authorized") {
+            // The room no longer holds our mandate — an operator reset it, or
+            // it was restored from a snapshot that predates us. Seating is
+            // cached, so without this the rival would go on bidding into a
+            // rejection forever and the floor would sit at zero bids with
+            // nothing in the log to explain it. Re-seat on the next tick.
+            r.joined = false;
+            console.warn(`[rival] ${r.persona.alias} was de-seated; re-seating`);
           }
         } else if (decision.action === "out") {
           await post("/withdraw", {
