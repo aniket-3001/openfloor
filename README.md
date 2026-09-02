@@ -15,7 +15,9 @@ Built for the [WebMCP Challenge](https://webmcp.devpost.com/).
 
 Three Google Cloud Run services on three genuinely distinct origins. **Verified L1 cross-origin in Chrome 151 against the live deployment** — see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and [`docs/BROWSER_VERIFICATION.md`](docs/BROWSER_VERIFICATION.md).
 
-Open the floor in Chrome 149+ with `chrome://flags/#enable-webmcp-testing`, or in ChatGPT's in-app browser. Any other browser gets a fully working manual auction.
+**Just open the link.** Both origins are registered in Chrome's WebMCP origin trial (valid to 17 November 2026), so there is no flag to enable and no restart — Chrome 149+ works as it comes. Verified in a clean, stock Chrome 151: WebMCP present, 10 tools on the floor, 3 on the console. ChatGPT's in-app browser also supports WebMCP. Any other browser gets a fully working manual auction.
+
+No sign-up, no login, nothing to configure.
 
 New here? [**USER_GUIDE.md**](docs/USER_GUIDE.md) explains the site in plain language, [**FEATURES.md**](docs/FEATURES.md) lists what was built and what actually works, and [**DEVPOST.md**](docs/DEVPOST.md) is the submission write-up.
 
@@ -104,7 +106,10 @@ Both integration paths are shown deliberately.
 **Raw API** — [`packages/floor/src/webmcp/registerAuctionTools.ts`](packages/floor/src/webmcp/registerAuctionTools.ts):
 
 ```js
-await modelContext.registerTool({
+// `document.modelContext` is the primary namespace. The code resolves
+// `navigator.modelContext` as a fallback, because Chrome is mid-migration
+// between the two names — see registerAuctionTools.ts.
+await document.modelContext.registerTool({
   name: "place_bid",
   description: "Place a bid on the current lot on your human's behalf...",
   inputSchema: {
@@ -159,11 +164,18 @@ ChatGPT's in-app browser is a separate, non-Chromium implementation and remains 
 
 ```bash
 npm install
-cp .dev.vars.example .dev.vars     # set MANDATE_SECRET
-npx wrangler dev --port 8123        # the auction house API
+cp .dev.vars.example .dev.vars      # set MANDATE_SECRET
+
+# The API. This is the same Node server that runs in production.
+OPENFLOOR_ROLE=api PORT=8123 MANDATE_SECRET=dev   ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174   npm run dev:server
+
 npm run dev:floor                   # http://localhost:5173
 npm run dev:bidder                  # http://localhost:5174
 ```
+
+The Cloudflare Worker build is still in the tree and still works
+(`npx wrangler dev --port 8123` in place of the API line above); the Node
+server is the one that is deployed, so it is the one documented here.
 
 Distinct ports are distinct origins, so the cross-origin path is exercised locally without DNS.
 

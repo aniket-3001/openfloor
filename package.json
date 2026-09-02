@@ -28,7 +28,8 @@
     "probe:exec": "node scripts/probe-execute.mjs",
     "probe:exposed": "node scripts/probe-exposedto.mjs",
     "dev:server": "npm run dev -w @openfloor/server",
-    "test:concurrency": "node scripts/concurrency.mjs"
+    "test:concurrency": "node scripts/concurrency.mjs",
+    "test:features": "node scripts/verify-features.mjs"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
