@@ -62,6 +62,11 @@ There is a third thing worth mentioning, which is unusual for a hackathon projec
 ### Three AI rivals bidding continuously
 **Works.** Ada, Rex and Nia bid against each other so the auction is always live. Importantly, **they get no special treatment** — they bid through the same public route as anyone else, with the same limits and checks. A house bot allowed to cheat would make every other claim meaningless.
 
+*Two bugs were found here by checking the live site rather than trusting the tests, and both are worth recording because both failed silently:*
+
+1. **The rivals stopped bidding after a few minutes.** When the catalogue looped, the code cleared every stored limit — so every bidder in the room, rivals included, was quietly stripped of permission. Their bids came back refused, the refusal was never logged, and the auction ran on with a live clock and no bids at all. Fixed by separating *looping the catalogue* from *clearing the room*: your limits are your instruction, and the sale ending is no reason to throw them away. This was also losing the limits of any real person who set them and walked away.
+2. **One lot could never be bid on by anyone.** The agents get a little less eager with each lot, which is intended — but that restraint was stored as a cash figure carried from the previous lot rather than a share of what the current one is worth. After a $90 camera they were pinned near $92, and the $280 watch opens at $120. Every agent refused it, every time, and it never once sold. Now the restraint scales with each lot's own value.
+
 ### The auction never stops
 **Works.** When an item closes it moves to the next, and starts over when it runs out. Before this, someone arriving a few minutes after a deployment found a dead page.
 
@@ -119,10 +124,10 @@ Being straight about these.
 
 ## How much of this is actually tested
 
-**179 automated tests**, plus checks against the real live site.
+**185 automated tests**, plus checks against the real live site.
 
-- **118** checking the logic — spending limits, the signed record, the anti-trickery text cleaning, the AI's decision rules.
-- **52** checking the whole system end to end against a running server.
+- **120** checking the logic — spending limits, the signed record, the anti-trickery text cleaning, the AI's decision rules.
+- **56** checking the whole system end to end against a running server.
 - **9** firing many bids at once to prove exactly one wins.
 - Plus checks driving a **real Chrome browser** against the live site.
 
@@ -131,6 +136,7 @@ Three of these tests are worth calling out, because they guard the claims rather
 - One fails the build if anyone ever adds a way for the AI to raise its own limit.
 - One tries every price in the range, for every AI personality, and fails if any of them ever proposes going over the limit.
 - One feeds the AI a fake instruction telling it to bid $99,999.99, and checks the number gets cut back down to the limit.
+- One checks a lot worth more than the ones before it can still be bid on — the bug above passed every existing test, because no test ever ran two different lots in sequence.
 
 ---
 
