@@ -103,6 +103,91 @@ body {
 
 .who { font-size: 13px; color: var(--ink-3); }
 
+/* ── Keeping a seat ─────────────────────────────────────── */
+
+.seat { position: relative; }
+
+.who-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.who-button:hover { color: var(--ink); }
+
+.seat-caret {
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: translateY(-1px) rotate(45deg);
+  opacity: 0.75;
+}
+
+.seat-pop {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 40;
+  width: 288px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 9%);
+  text-align: left;
+}
+
+.seat-lede { margin: 0 0 14px; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+.seat-lede strong { color: var(--ink); font-weight: 550; }
+
+.seat-label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.seat-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+}
+.seat-input:focus { outline: none; border-color: var(--ink-3); }
+
+.seat-submit {
+  width: 100%;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--surface);
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.seat-submit:disabled { opacity: 0.4; cursor: default; }
+
+.seat-error { margin: 0 0 10px; font-size: 12px; color: var(--live); }
+.seat-foot { margin: 12px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--ink-3); }
+
+@media (max-width: 480px) { .seat-pop { width: min(288px, calc(100vw - 32px)); } }
+
 /* ── Lot ────────────────────────────────────────────────── */
 
 .lot { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 4fr); gap: 56px; align-items: start; }

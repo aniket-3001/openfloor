@@ -6,6 +6,7 @@ import { useAuction } from "./lib/useAuction";
 import { registerAuctionTools } from "./webmcp/registerAuctionTools";
 import { registerMandateTools } from "./webmcp/registerMandateTools";
 import { LotPlate } from "./components/LotPlate";
+import { SeatClaim } from "./components/SeatClaim";
 import { Activity } from "./components/Activity";
 
 /**
@@ -122,7 +123,7 @@ export function App() {
               {connected ? "Live" : "Reconnecting"}
             </span>
           )}
-          {me && <span className="who">{me.handle ?? me.alias}</span>}
+          {me && <SeatClaim me={me} onClaimed={() => void loadMe()} />}
         </div>
       </header>
 
