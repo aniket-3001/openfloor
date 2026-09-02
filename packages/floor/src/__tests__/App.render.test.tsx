@@ -181,3 +181,20 @@ describe("floor detects WebMCP when present", () => {
     delete (document as unknown as { modelContext?: unknown }).modelContext;
   });
 });
+
+describe("keeping a seat", () => {
+  it("offers a way to claim the seat when it is still anonymous", async () => {
+    render(<App />);
+    // The backend for this shipped long before the control did, so the page
+    // showed a name with no way to keep it. Guard the control itself.
+    const btn = await screen.findByRole("button", { name: /Guest/ });
+    expect(btn).toBeTruthy();
+  });
+
+  it("shows the name plainly once claimed, with nothing left to fill in", async () => {
+    mockApi({ session: { bidder_id: "u_test", alias: "wren", handle: "wren" } });
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("wren")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: /wren/ })).toBeNull();
+  });
+});
