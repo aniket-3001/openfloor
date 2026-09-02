@@ -129,6 +129,7 @@ export const api = {
     bidder_id: string;
     ceiling_cents: number;
     notify_above_cents: number;
+    total_budget_cents?: number;
     strategy_note?: string;
     auto_bid_enabled?: boolean;
   }) => post<{ mandate: BidMandate }>("/mandate", body),
