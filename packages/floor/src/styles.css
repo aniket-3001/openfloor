@@ -464,6 +464,8 @@ footer.foot {
   color: var(--ink-2);
 }
 
+.agent-dot.waiting { background: var(--warn); }
+
 .agent-dot {
   flex: none;
   width: 6px;

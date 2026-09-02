@@ -23,9 +23,11 @@ export function useFloorAgent(params: {
   state: AuctionState | null;
   lot: PublicLot | null;
   mandate: BidMandate | null;
+  /** The lot the human actually delegated on. */
+  delegatedLotId: string | null;
   onActed: () => void;
 }) {
-  const { bidderId, state, lot, mandate, onActed } = params;
+  const { bidderId, state, lot, mandate, delegatedLotId, onActed } = params;
   const [lastLine, setLastLine] = useState<string | null>(null);
   const planRef = useRef<AgentPlan | null>(null);
   const lotIdRef = useRef<string | null>(null);
@@ -43,6 +45,16 @@ export function useFloorAgent(params: {
     if (!enabled || busy.current) return;
     if (!state?.lot || !lot || !mandate) return;
     if (state.lot.status !== "open" || state.seconds_remaining <= 0) return;
+
+    // Consent is per item, not blanket. You handed over the bidding on the lot
+    // in front of you; a different lot is a different decision, with a
+    // different value and a different limit. So the agent stops at the
+    // boundary and waits to be sent in again. This is also the honest reading
+    // of what "bid for me" meant when you pressed it.
+    if (delegatedLotId && state.lot.id !== delegatedLotId) {
+      setLastLine(`The sale moved to ${lot.title}. Waiting for you to send it in again.`);
+      return;
+    }
     if (state.high_bidder_id === bidderId) {
       setLastLine("Holding the high bid — nothing to do.");
       return;
@@ -142,7 +154,7 @@ export function useFloorAgent(params: {
     } finally {
       busy.current = false;
     }
-  }, [enabled, state, lot, mandate, bidderId, persona, onActed]);
+  }, [enabled, state, lot, mandate, bidderId, persona, delegatedLotId, onActed]);
 
   useEffect(() => {
     if (!enabled) {
@@ -153,7 +165,10 @@ export function useFloorAgent(params: {
     return () => clearInterval(t);
   }, [enabled, tick]);
 
-  return { agentLine: lastLine, agentRunning: enabled };
+  const needsNewLotConsent =
+    enabled && !!delegatedLotId && !!state?.lot && state.lot.id !== delegatedLotId;
+
+  return { agentLine: lastLine, agentRunning: enabled, needsNewLotConsent };
 }
 
 /**

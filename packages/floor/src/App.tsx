@@ -40,6 +40,7 @@ export function App() {
   const admin = useMemo(() => new URLSearchParams(location.search).has("admin"), []);
   const bidderId = me?.bidder_id ?? "";
   const [delegating, setDelegating] = useState(false);
+  const [delegatedLotId, setDelegatedLotId] = useState<string | null>(null);
 
   /**
    * Hand the bidding over in one click.
@@ -66,6 +67,7 @@ export function App() {
         auto_bid_enabled: true,
       });
       setMandate(m);
+      setDelegatedLotId(state.lot.id);
       setNotice("Your agent is bidding. It will ask before passing your line.");
     } catch {
       setNotice("Could not start your agent. Try again.");
@@ -74,11 +76,12 @@ export function App() {
     }
   }, [state, lot, bidderId, me]);
 
-  const { agentLine, agentRunning } = useFloorAgent({
+  const { agentLine, agentRunning, needsNewLotConsent } = useFloorAgent({
     bidderId,
     state,
     lot,
     mandate,
+    delegatedLotId,
     onActed: refresh,
   });
 
@@ -347,9 +350,18 @@ export function App() {
           </div>
           {agentRunning && agentLine && (
             <p className="agent-line">
-              <span className="agent-dot" aria-hidden="true" />
+              <span className={`agent-dot ${needsNewLotConsent ? "waiting" : ""}`} aria-hidden="true" />
               {agentLine}
             </p>
+          )}
+          {/* A new lot is a new decision. The agent will not carry your
+              permission across to something you never looked at. */}
+          {needsNewLotConsent && (
+            <div className="act">
+              <button onClick={() => void delegate()} disabled={delegating}>
+                {delegating ? "Starting…" : `Bid for me on ${lot?.title ?? "this lot"}`}
+              </button>
+            </div>
           )}
           <Band
             price={state?.current_price_cents ?? 0}

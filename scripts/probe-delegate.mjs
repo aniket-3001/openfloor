@@ -109,6 +109,9 @@ async function main() {
     let asked = false, line = null;
     for (let i = 0; i < 22 && !asked; i++) {
       await wait(3000);
+      // Consent is per lot, so when the sale moves on the agent stops and
+      // waits to be sent in again. Send it in, exactly as a person would.
+      await cdp.eval(clickByText("Bid for me on"));
       // Either form of asking counts. A confirmation card is the common case;
       // when a new lot opens above the ceiling set against the previous one,
       // the agent asks to raise the limit instead. Both are the agent stopping
