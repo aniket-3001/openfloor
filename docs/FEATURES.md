@@ -139,9 +139,9 @@ Being straight about these.
 
 ## How much of this is actually tested
 
-**187 automated tests**, plus checks against the real live site.
+**188 automated tests**, plus five suites run against the live site itself.
 
-- **122** checking the logic — spending limits, the signed record, the anti-trickery text cleaning, the AI's decision rules.
+- **123** checking the logic — spending limits, the signed record, the anti-trickery text cleaning, the AI's decision rules.
 - **56** checking the whole system end to end against a running server.
 - **9** firing many bids at once to prove exactly one wins.
 - Plus checks driving a **real Chrome browser** against the live site.
@@ -151,6 +151,23 @@ Three of these tests are worth calling out, because they guard the claims rather
 - One fails the build if anyone ever adds a way for the AI to raise its own limit.
 - One tries every price in the range, for every AI personality, and fails if any of them ever proposes going over the limit.
 - One feeds the AI a fake instruction telling it to bid $99,999.99, and checks the number gets cut back down to the limit.
+- One checks that "you are already winning" and "you have no permission" are never reported as the same thing — they used to share a code, which would make a well-behaved agent throw away its permissions and start over for no reason.
+
+### Checking the claims on this page
+
+There is now a suite whose checks are named after the sentences above, so if a claim here stops being true, the failure tells you which line to fix. Run against the live site, everything on this page passes:
+
+| Suite | What it covers | Result |
+|---|---|---|
+| Feature claims | every entry on this page, one at a time | **49 pass** |
+| End to end | the whole system against a running server | **56 pass** |
+| Live behaviour | clock, anti-snipe, lot closing, live updates | **25 pass** |
+| Many bids at once | fifty simultaneous bids | **9 pass** |
+| Origin trial | stock Chrome, no flags at all | **6 pass** |
+| Accounts | the real sign-in form, in a real browser | **7 pass** |
+| Cross-origin | allowlisted vs identical non-allowlisted origin | **7 pass** |
+
+The slowest check is worth naming: an approval request is deliberately left unanswered for 65 seconds, to confirm it lapses into a *no*. Silence is never taken as yes — and that is now measured rather than asserted.
 - One checks a lot worth more than the ones before it can still be bid on — the bug above passed every existing test, because no test ever ran two different lots in sequence.
 
 ---
