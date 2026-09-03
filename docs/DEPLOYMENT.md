@@ -74,7 +74,7 @@ Both fixed: the probe now parses `isError`, and only counts tool names **absent 
 
 | Suite | Result |
 |---|---|
-| Integration (52) | pass |
+| Integration (56) | pass |
 | Live — WebSocket/WSS, clock, anti-snipe, alarm (25) | pass |
 | Concurrency / serialization (9) | pass |
 | Real-Chrome probe | **L1 cross-origin** |

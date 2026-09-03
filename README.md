@@ -87,9 +87,10 @@ Three genuinely separate origins. Subdomains are distinct origins, so this is a 
            │ WebSocket + REST (authoritative)
            ▼
 ┌────────────────────────────────────────────────────────────┐
-│ Cloudflare Worker + Durable Object                         │
+│ Auction server — single-writer room                        │
 │  serialized bids · mandate enforcement · hidden reserve    │
 │  anti-snipe extension · audit ledger · LLM proxy           │
+│  deployed on Cloud Run; runs as a Durable Object unchanged │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -97,7 +98,9 @@ Three genuinely separate origins. Subdomains are distinct origins, so this is a 
 
 To be precise about what is *not* claimed: the mandate is stored and enforced by the auction server, because client-side enforcement would not be enforcement at all. The privacy property here is between **bidders**, not between a bidder and the house.
 
-**Why a Durable Object:** a DO processes one request at a time per instance, so bid serialization is a property of the runtime rather than something implemented with locks. Two agents bidding in the same millisecond are ordered deterministically, and "am I still the high bidder?" cannot go stale mid-check.
+**Why a single-writer room:** bid serialization has to be a property of the runtime rather than something implemented with locks, or "am I still the high bidder?" can go stale between the check and the write. Two agents bidding in the same millisecond must be ordered deterministically.
+
+The engine is written against that one requirement and is host-agnostic. In production it runs on Cloud Run pinned to a single instance (`minScale=1, maxScale=1`), which is what makes the in-memory room authoritative. The same engine runs unchanged as a Cloudflare Durable Object, where the guarantee comes from the DO processing one request at a time per instance instead — `wrangler.toml` and `packages/worker/` are live, not vestigial. The concurrency suite (9 checks) is what actually pins the property, and it passes against the deployed host.
 
 ---
 
@@ -221,20 +224,20 @@ Full threat model in [`docs/SECURITY.md`](docs/SECURITY.md). In brief:
 
 ## Testing
 
-**179 tests across three suites**, all passing.
+**207 tests across three suites**, all passing.
 
 ```bash
-npm run test              # 102 unit tests (node + jsdom)
+npm run test              # 126 unit tests (node + jsdom)
 npm run typecheck
 
 npx wrangler dev --port 8123
-npm run test:integration  # 52 end-to-end tests against a live Durable Object
+npm run test:integration  # 56 end-to-end tests against the live room
 npm run test:live         # 25 live-behaviour tests (~2 min, waits on real time)
 
 npm run verify            # typecheck + unit + build
 ```
 
-**Unit (102)** — the security-critical logic. All three mandate bands and every rejection path; signature tampering and canonical-form stability; injection signatures including hidden-codepoint smuggling; tool budgets; the agent's decision policy; WebMCP layer detection; and nine jsdom render tests.
+**Unit (126)** — the security-critical logic. All three mandate bands and every rejection path; signature tampering and canonical-form stability; injection signatures including hidden-codepoint smuggling; tool budgets; the agent's decision policy; WebMCP layer detection; the session cookie's cross-site attributes, because a cookie the browser silently declines to store has no error message anywhere; and thirteen jsdom render tests.
 
 Three assert properties that are the whole point of the project, mechanically, so a future edit that breaks one fails CI rather than shipping:
 
@@ -242,9 +245,9 @@ Three assert properties that are the whole point of the project, mechanically, s
 - **`decide()` never proposes a bid above the ceiling** — swept across the full price range for every persona, rather than checked by example.
 - **A model advising a bid of `9999999` is clamped to the ceiling** — the injection scenario, proving the model advises a bounded policy rather than driving it.
 
-**Integration (52)** — what unit tests cannot reach: serialization, persistence, rate limiting, and the redaction boundary. Includes regressions for every defect found during testing.
+**Integration (56)** — what unit tests cannot reach: serialization, persistence, rate limiting, and the redaction boundary. Includes regressions for every defect found during testing.
 
-**Live (25)** — WebSocket fan-out, CORS as the HTTP mirror of the `exposedTo` allowlist, the LLM proxy's keyless fallback, and the auction clock: it waits out a real countdown, fires a genuine last-second bid, and verifies the anti-snipe extension actually moves the clock and that the Durable Object alarm closes the lot consistently with the reserve.
+**Live (25)** — WebSocket fan-out, CORS as the HTTP mirror of the `exposedTo` allowlist, the LLM proxy's keyless fallback, and the auction clock: it waits out a real countdown, fires a genuine last-second bid, and verifies the anti-snipe extension actually moves the clock and that the room's alarm closes the lot consistently with the reserve.
 
 The L3 promise is tested rather than assumed — the floor is rendered with **no** `document.modelContext` and asserted to show a working auction, the countdown, manual bidding, and an explanation of how to enable WebMCP. A companion test asserts the trust asymmetry at runtime: `place_bid` registers **with** `exposedTo`, `set_bid_mandate` registers **without** it.
 
@@ -262,7 +265,9 @@ The L3 promise is tested rather than assumed — the floor is rendered with **no
 ```
 packages/
   shared/   types, mandate signing + enforcement, tool schemas, sanitizers
-  worker/   Durable Object auction engine, REST + WebSocket, LLM proxy
+  engine/   auction room: lots, clock, bid enforcement, audit ledger
+  server/   REST + WebSocket host, LLM proxy, rival driver — this is what deploys
+  worker/   the same engine as a Cloudflare Durable Object (alternative host)
   floor/    auction house origin — raw registerTool integration
   bidder/   bidder console origin — useWebMCP hook, 4-stage agent
 docs/       ARCHITECTURE, SECURITY, TOOLS, DEMO_SCRIPT
