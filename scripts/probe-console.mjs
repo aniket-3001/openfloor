@@ -24,6 +24,12 @@ const CHROME = [
   "/usr/bin/google-chrome",
 ].find((p) => p && existsSync(p));
 
+/** Where the console's own API lives, so a check can ask the server directly. */
+const API = process.env.OPENFLOOR_API_ORIGIN
+  ?? (URL_ARG.includes("localhost")
+    ? "http://127.0.0.1:8123"
+    : new URL(URL_ARG).origin.replace("-bidder-", "-api-"));
+
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const check = (name, ok, detail = "") => {
@@ -129,10 +135,26 @@ Bidder console · ${URL_ARG}
     const after = await cdp.eval(`(() => ({
       header: (document.querySelector('.masthead-right')?.innerText ?? '').trim(),
       rows: document.querySelectorAll('.log-row').length,
-      stillIdle: !!document.querySelector('.empty'),
     }))()`);
-    check("setting limits actually saves a mandate", after?.stillIdle !== true || after?.rows > 0,
-      after?.stillIdle ? "still showing the idle message" : "");
+
+    // Ask the server, using the page's own credentials, rather than reading
+    // the idle message. Whether that message has gone yet is a question about
+    // the agent's cadence — it is enabled a beat before it has anything to
+    // say, and the panel is legitimately still empty in that beat. Whether a
+    // mandate exists under this session is the claim actually being made, and
+    // it is the one that broke: the cookie was dropped, the write landed under
+    // one identity and the read asked after another.
+    const saved = await cdp.eval(`(async () => {
+      try {
+        const s = await fetch(${JSON.stringify(API)} + '/api/session', { credentials: 'include' }).then(r => r.json());
+        const id = s?.session?.bidder_id;
+        if (!id) return { error: 'no session' };
+        const m = await fetch(${JSON.stringify(API)} + '/api/mandate?room=main&bidder_id=' + id, { credentials: 'include' }).then(r => r.json());
+        return { id, auto: m?.mandate?.auto_bid_enabled ?? null, err: m?.error ?? null };
+      } catch (e) { return { error: String(e) }; }
+    })()`);
+    check("setting limits actually saves a mandate", saved?.auto === true,
+      saved?.err ?? saved?.error ?? `auto_bid_enabled=${saved?.auto}`);
     check("the agent switches to bidding", /bidding/i.test(after?.header ?? ""), after?.header);
 
     let rows = after?.rows ?? 0;

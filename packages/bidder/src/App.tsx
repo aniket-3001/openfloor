@@ -77,10 +77,14 @@ export function App() {
   const [notify, setNotify] = useState("65.00");
   const [budget, setBudget] = useState("150.00");
 
-  const loadMandate = useCallback(async () => {
-    if (!bidderId) return;
+  // `who` overrides the id in state for the one call that knows better than
+  // state does: the read straight after a write, where the reply has just told
+  // us the session is someone else and React has not caught up yet.
+  const loadMandate = useCallback(async (who?: string) => {
+    const id = who || bidderId;
+    if (!id) return;
     try {
-      const { mandate: m, headroom: h } = await api.getMandate(bidderId);
+      const { mandate: m, headroom: h } = await api.getMandate(id);
       setMandate(m);
       setHeadroom(h ?? null);
     } catch {
@@ -195,8 +199,14 @@ export function App() {
     // under a different id than the one we sent, and every later read with
     // the old id is refused as somebody else's. So take the identity from
     // the reply too, not just the limits.
-    if (saved?.bidder_id && saved.bidder_id !== bidderId) adoptBidderId(saved.bidder_id);
+    const who = saved?.bidder_id || bidderId;
+    if (who !== bidderId) adoptBidderId(who);
     setMandate(saved);
+    // The write returns the mandate but not the remaining budget, and the
+    // agent will not act without it — an observation missing its headroom is
+    // no observation at all, so the agent reads as enabled and does nothing.
+    // Read it back under whoever the server just said we are.
+    await loadMandate(who);
   }
 
   async function toggleAuto(on: boolean) {
