@@ -152,7 +152,12 @@ export function App() {
     const n = Math.round(parseFloat(notify) * 100);
     const b = Math.round(parseFloat(budget) * 100);
     if (!Number.isFinite(c) || !Number.isFinite(n)) return;
-    await api.setMandate({
+    if (!bidderId) return;
+    // Take the mandate straight from the reply rather than reading it back.
+    // The round trip raced with identity resolution: the write succeeded, the
+    // follow-up read was skipped, and the agent stayed paused with the form
+    // looking as though nothing had happened.
+    const { mandate: saved } = await api.setMandate({
       bidder_id: bidderId,
       ceiling_cents: c,
       notify_above_cents: Math.min(n, c),
@@ -161,6 +166,7 @@ export function App() {
       ...(Number.isFinite(b) && b >= c ? { total_budget_cents: b } : {}),
       auto_bid_enabled: true,
     });
+    setMandate(saved);
     await loadMandate();
   }
 
