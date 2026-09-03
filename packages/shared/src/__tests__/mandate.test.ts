@@ -194,8 +194,12 @@ describe("mandate signing", () => {
   });
 
   it("sorts lot_ids so ordering cannot change the signature", () => {
+    // Derive the second from the first rather than building it separately:
+    // makeMandate stamps created_at/expires_at from the clock, so two calls a
+    // millisecond apart differ in fields this test is not about, and it failed
+    // at random.
     const a = makeMandate({ lot_ids: ["lot-a", "lot-b"] });
-    const b = makeMandate({ lot_ids: ["lot-b", "lot-a"] });
+    const b: BidMandate = { ...a, lot_ids: ["lot-b", "lot-a"] };
     expect(canonicalMandate(a)).toBe(canonicalMandate(b));
   });
 });
