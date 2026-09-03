@@ -14,9 +14,23 @@ const STAGE_LABEL: Record<AgentLogEntry["stage"], string> = {
  * that the agent formed a plan, decided against it, took the server's corrected
  * figures, and revised — instead of a black box that emits bids.
  */
-export function AgentLog({ entries, limit = 10 }: { entries: AgentLogEntry[]; limit?: number }) {
+export function AgentLog({
+  entries,
+  limit = 10,
+  idleReason = "Nothing yet.",
+}: {
+  entries: AgentLogEntry[];
+  limit?: number;
+  /**
+   * Why there is nothing to show. This used to be a fixed "Waiting for a lot
+   * to open", which was usually untrue — a lot was open and the real reason
+   * was that no limits had been set — and so said nothing about what to do
+   * next.
+   */
+  idleReason?: string;
+}) {
   if (!entries.length) {
-    return <div className="empty">Waiting for a lot to open.</div>;
+    return <div className="empty">{idleReason}</div>;
   }
 
   // Bounded by count rather than a scrollbox: the page is the scroll surface.
