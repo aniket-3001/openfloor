@@ -33,16 +33,19 @@ function useSessionBidderId(): string {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      try {
-        const { session } = await api.session();
-        if (!cancelled && session) setId(session.bidder_id);
-      } catch {
-        /* the next render retries via the effect below */
+      // One failed fetch used to be fatal: the id stayed empty for the life of
+      // the page, and every guard that depends on it — saving a mandate above
+      // all — then silently did nothing. Keep asking until the session answers.
+      for (let attempt = 0; attempt < 20 && !cancelled; attempt++) {
+        try {
+          const { session } = await api.session();
+          if (cancelled) return;
+          if (session?.bidder_id) { setId(session.bidder_id); return; }
+        } catch { /* fall through to the delay */ }
+        await new Promise((r) => setTimeout(r, Math.min(500 * (attempt + 1), 4000)));
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
   return id;
 }

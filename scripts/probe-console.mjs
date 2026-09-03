@@ -80,8 +80,11 @@ async function main() {
       await wait(500);
       try { ver = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json(); } catch {}
     }
+    // Open blank, then navigate once. Creating the tab at the target URL and
+    // then navigating to it again loads the page twice, and the second load
+    // can land while the first is still settling its session cookie.
     const page = await (await fetch(
-      `http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(URL_ARG)}`, { method: "PUT" },
+      `http://127.0.0.1:${PORT}/json/new?about:blank`, { method: "PUT" },
     )).json();
     cdp = await CDP.attach(page.webSocketDebuggerUrl);
     await cdp.send("Runtime.enable");
@@ -107,9 +110,17 @@ Bidder console · ${URL_ARG}
     check("the idle message says what to do", /set your limits/i.test(before?.idle ?? ""));
     check("the agent starts paused", /paused/i.test(before?.header ?? ""), before?.header);
 
-    await cdp.eval(`(() => { const b=[...document.querySelectorAll('button')]
-      .find(x => x.textContent.trim() === 'Set limits'); if (b) b.click(); })()`);
-    await wait(6000);
+    const clicked = await cdp.eval(`(() => { const b=[...document.querySelectorAll('button')]
+      .find(x => x.textContent.trim() === 'Set limits'); if (!b) return false; b.click(); return true; })()`);
+    check("the Set limits button is clickable", clicked === true);
+
+    // Poll rather than wait a fixed moment: the save is a round trip and the
+    // agent's first decision is on its own cadence.
+    let ready = false;
+    for (let i = 0; i < 12 && !ready; i++) {
+      await wait(2500);
+      ready = await cdp.eval(`/bidding/i.test(document.querySelector('.masthead-right')?.innerText ?? '')`);
+    }
 
     // The regression this file exists for: the console minted its own bidder
     // id, so the mandate was written under the session and read back under the
