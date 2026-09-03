@@ -69,7 +69,6 @@ export function App() {
   const [mandate, setMandate] = useState<BidMandate | null>(null);
   const [headroom, setHeadroom] = useState<Headroom | null>(null);
   const [layer, setLayer] = useState<WebMcpLayer>("L3_no_webmcp");
-  const [joined, setJoined] = useState(false);
 
   const [ceiling, setCeiling] = useState("80.00");
   const [notify, setNotify] = useState("65.00");
@@ -112,8 +111,18 @@ export function App() {
   useEffect(() => {
     if (!bidderId) return;
     void (async () => {
-      await api.join({ bidder_id: bidderId, alias: persona.alias });
-      setJoined(true);
+      // Joining registers a display name; it is not what authorises anything.
+      // An unretried failure here used to disable the agent permanently — the
+      // effect threw before `setJoined`, nothing retried, and the console sat
+      // paused with a mandate on file and no explanation.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await api.join({ bidder_id: bidderId, alias: persona.alias });
+          break;
+        } catch {
+          await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        }
+      }
       await loadMandate();
     })();
   }, [bidderId, persona.alias, loadMandate]);
@@ -135,7 +144,9 @@ export function App() {
     onCeilingRaiseRequested: () => void refresh(),
   });
 
-  const agentEnabled = !!mandate?.auto_bid_enabled && joined;
+  // The mandate is the authority, not the display name. Gating on `joined`
+  // meant a failed cosmetic call could silently stop the agent.
+  const agentEnabled = !!mandate?.auto_bid_enabled && !!bidderId;
   const agent = useAgent({
     bidderId,
     persona,
