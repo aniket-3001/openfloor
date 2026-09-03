@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { BidMandate } from "@openfloor/shared";
 import {
   fmt,
@@ -18,16 +18,33 @@ const CONFIG = loadConfig();
 const FLOOR_ORIGIN = CONFIG.floorOrigin || "http://localhost:5173";
 const PERSONA_ID = CONFIG.persona;
 
-function useBidderId(personaId: string): string {
-  return useMemo(() => {
-    const k = `openfloor.bidder_id.${personaId}`;
-    let v = sessionStorage.getItem(k);
-    if (!v) {
-      v = `${personaId}_${crypto.randomUUID().slice(0, 6)}`;
-      sessionStorage.setItem(k, v);
-    }
-    return v;
-  }, [personaId]);
+/**
+ * Identity comes from the server, never from the client.
+ *
+ * This console used to mint its own id in sessionStorage. Once sessions
+ * arrived, the API began taking the caller's identity from their cookie and
+ * ignoring any id in the payload — so a mandate was written under the session
+ * and then read back under the invented id, which the server correctly refused
+ * as someone else's. The console's agent could therefore never be enabled: it
+ * asked for its own mandate, was told 403, and sat paused forever.
+ */
+function useSessionBidderId(): string {
+  const [id, setId] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { session } = await api.session();
+        if (!cancelled && session) setId(session.bidder_id);
+      } catch {
+        /* the next render retries via the effect below */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return id;
 }
 
 /**
@@ -44,7 +61,7 @@ function useBidderId(personaId: string): string {
  */
 export function App() {
   const persona = getPersona(PERSONA_ID);
-  const bidderId = useBidderId(persona.id);
+  const bidderId = useSessionBidderId();
   const { state, secondsLeft, confirmations, raiseRequests, connected, refresh, setRaiseRequests } =
     useAuction(bidderId);
 
@@ -59,9 +76,17 @@ export function App() {
   const [budget, setBudget] = useState("150.00");
 
   const loadMandate = useCallback(async () => {
-    const { mandate: m, headroom: h } = await api.getMandate(bidderId);
-    setMandate(m);
-    setHeadroom(h ?? null);
+    if (!bidderId) return;
+    try {
+      const { mandate: m, headroom: h } = await api.getMandate(bidderId);
+      setMandate(m);
+      setHeadroom(h ?? null);
+    } catch {
+      // A failed read must not leave a stale mandate on screen implying the
+      // agent is running when it is not.
+      setMandate(null);
+      setHeadroom(null);
+    }
   }, [bidderId]);
 
   /* Bring the floor into the frame tree, then probe. Without this hidden
@@ -85,6 +110,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!bidderId) return;
     void (async () => {
       await api.join({ bidder_id: bidderId, alias: persona.alias });
       setJoined(true);
@@ -361,7 +387,20 @@ export function App() {
           <h2>{possessive} reasoning</h2>
           {agent.thinking && <span className="aside">thinking…</span>}
         </div>
-        <AgentLog entries={agent.log} />
+        <AgentLog
+          entries={agent.log}
+          idleReason={
+            !bidderId
+              ? "Connecting to the saleroom…"
+              : !mandate
+                ? "Set your limits above, and your agent will start bidding and show its working here."
+                : !mandate.auto_bid_enabled
+                  ? "Your agent is paused. Resume it above."
+                  : state?.lot?.status !== "open"
+                    ? "Waiting for the next lot to open."
+                    : "Watching the bidding."
+          }
+        />
       </section>
 
       <footer className="foot">

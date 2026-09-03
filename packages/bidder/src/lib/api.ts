@@ -20,6 +20,18 @@ function url(path: string, params: Record<string, string | number> = {}): string
   return u.toString();
 }
 
+/**
+ * Who the server thinks we are.
+ *
+ * Session endpoints sit outside the room, so they take no `room` parameter.
+ */
+async function getRoot<T>(path: string): Promise<T> {
+  const u = new URL(`${BASE}/api${path}`, BASE || window.location.origin);
+  const res = await fetch(u.toString(), { credentials: "include" });
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+  return (await res.json()) as T;
+}
+
 async function get<T>(path: string, params?: Record<string, string | number>): Promise<T> {
   const res = await fetch(url(path, params), { credentials: "include" });
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
@@ -53,6 +65,10 @@ export interface Headroom {
 export const API_BASE = BASE;
 
 export const api = {
+  /** Identity is issued by the server; the client must not invent its own. */
+  session: () =>
+    getRoot<{ session: { bidder_id: string; alias: string; handle: string | null } | null }>("/session"),
+
   state: () => get<{ state: AuctionState }>("/state"),
   lot: () => get<{ lot: PublicLot | null }>("/lot"),
   history: (limit = 10) =>
