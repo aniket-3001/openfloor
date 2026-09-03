@@ -149,7 +149,16 @@ export function sessionCookie(token: string, opts: { secure: boolean }): string 
   // a different origin, and the WebMCP tool bridge runs the floor inside an
   // iframe. Lax would drop the cookie in exactly the flow this project is about.
   // None demands Secure, so plain-HTTP local dev falls back to Lax.
-  parts.push(opts.secure ? "SameSite=None; Secure" : "SameSite=Lax");
+  //
+  // Partitioned (CHIPS) is required for the same reason one step further out.
+  // SameSite=None only survives if the browser allows third-party cookies at
+  // all, and increasingly it does not — Chrome's tracking protection drops it,
+  // and a dropped session cookie is invisible rather than loud: every request
+  // arrives without one, the server mints a fresh identity for each, and the
+  // mandate you wrote a moment ago belongs to somebody else. Partitioned asks
+  // for a jar keyed to the top-level site instead, which is exactly the scope
+  // this session wants. Browsers that do not know the attribute ignore it.
+  parts.push(opts.secure ? "SameSite=None; Secure; Partitioned" : "SameSite=Lax");
   return parts.join("; ");
 }
 

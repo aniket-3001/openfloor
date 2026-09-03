@@ -28,7 +28,7 @@ const PERSONA_ID = CONFIG.persona;
  * as someone else's. The console's agent could therefore never be enabled: it
  * asked for its own mandate, was told 403, and sat paused forever.
  */
-function useSessionBidderId(): string {
+function useSessionBidderId(): [string, (id: string) => void] {
   const [id, setId] = useState("");
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +47,7 @@ function useSessionBidderId(): string {
     })();
     return () => { cancelled = true; };
   }, []);
-  return id;
+  return [id, setId];
 }
 
 /**
@@ -64,7 +64,7 @@ function useSessionBidderId(): string {
  */
 export function App() {
   const persona = getPersona(PERSONA_ID);
-  const bidderId = useSessionBidderId();
+  const [bidderId, adoptBidderId] = useSessionBidderId();
   const { state, secondsLeft, confirmations, raiseRequests, connected, refresh, setRaiseRequests } =
     useAuction(bidderId);
 
@@ -88,8 +88,17 @@ export function App() {
       // agent is running when it is not.
       setMandate(null);
       setHeadroom(null);
+      // The commonest cause is not a network fault but a stale identity: the
+      // session cookie was dropped, the server issued a new id, and this read
+      // is asking after a mandate that now belongs to nobody. Ask who we are
+      // and adopt the answer — the next read then finds its own mandate
+      // instead of being refused forever.
+      try {
+        const { session } = await api.session();
+        if (session?.bidder_id) adoptBidderId(session.bidder_id);
+      } catch { /* nothing more to try this round */ }
     }
-  }, [bidderId]);
+  }, [bidderId, adoptBidderId]);
 
   /* Bring the floor into the frame tree, then probe. Without this hidden
      bridge frame the console cannot reach the floor's tools at all — measured
@@ -180,8 +189,14 @@ export function App() {
       ...(Number.isFinite(b) && b >= c ? { total_budget_cents: b } : {}),
       auto_bid_enabled: true,
     });
+    // The server decides who you are; the id we asked with is only a guess.
+    // If the session cookie was dropped in transit — a browser blocking
+    // third-party cookies will do that silently — the mandate comes back
+    // under a different id than the one we sent, and every later read with
+    // the old id is refused as somebody else's. So take the identity from
+    // the reply too, not just the limits.
+    if (saved?.bidder_id && saved.bidder_id !== bidderId) adoptBidderId(saved.bidder_id);
     setMandate(saved);
-    await loadMandate();
   }
 
   async function toggleAuto(on: boolean) {
